@@ -6,12 +6,6 @@ import SPFKAudioBase
 import SPFKBase
 import SPFKTempoC
 
-public typealias BpmAnalysisEventHandler = @Sendable (BpmAnalysisEvent) async -> Void
-
-public enum BpmAnalysisEvent: Sendable {
-    case loading(url: URL, progress: UnitInterval)
-}
-
 public actor BpmAnalysis: Sendable {
     private var task: Task<Bpm, Error>?
 
@@ -95,7 +89,7 @@ public actor BpmAnalysis: Sendable {
             framesPerBuffer = totalFrames
         }
 
-        let pcmFormat = audioFile.processingFormat
+        let pcmFormat: AVAudioFormat = audioFile.processingFormat
 
         guard
             let buffer = AVAudioPCMBuffer(
@@ -112,9 +106,7 @@ public actor BpmAnalysis: Sendable {
         let checkBpmAt: AVAudioFrameCount = AVAudioFrameCount(sampleRate) * 4
         var bpms: [Bpm] = []
 
-        let bpmDetect: BPMDetectC = .init(
-            sampleRate: sampleRate.int32, numberOfChannels: buffer.format.channelCount.int32
-        )
+        let bpmDetect: BPMDetectC = .init(format: pcmFormat)
 
         while currentFrame < totalFrames {
             audioFile.framePosition = currentFrame

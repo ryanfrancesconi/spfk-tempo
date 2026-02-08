@@ -1,4 +1,5 @@
-// Copyright Ryan Francesconi. All Rights Reserved. Revision History at https://github.com/ryanfrancesconi/spfk-tempo
+// Copyright Ryan Francesconi. All Rights Reserved. Revision History at
+// https://github.com/ryanfrancesconi/spfk-tempo
 
 #import <iostream>
 
@@ -6,13 +7,16 @@
 #import "BPMDetectC.h"
 #import "STTypes.h"
 
-/// objc++ wrapper on soundtouch BPMDetect for swift
 @implementation BPMDetectC {
     soundtouch::BPMDetect *_bpmDetect;
 }
 
-- (id)initWithSampleRate:(int)sampleRate
-        numberOfChannels:(int)numberOfChannels {
+- (instancetype)init {
+    return [self initWithSampleRate:44100 numberOfChannels:2]; // invalid init
+}
+
+- (instancetype)initWithSampleRate:(int)sampleRate
+                  numberOfChannels:(int)numberOfChannels {
     self = [super init];
 
     if (self) {
@@ -20,6 +24,11 @@
     }
 
     return self;
+}
+
+- (instancetype)initWithFormat:(AVAudioFormat *)format {
+    return [self initWithSampleRate:(int)format.sampleRate
+                   numberOfChannels:(int)format.channelCount];
 }
 
 - (void)process:(const float *)data numberOfSamples:(int)numberOfSamples {
