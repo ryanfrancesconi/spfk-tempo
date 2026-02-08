@@ -7,7 +7,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 /// objc++ wrapper on soundtouch BPMDetect for Swift access
-@interface BPMDetectC : NSObject
+@interface DetectTempo : NSObject
 
 - (instancetype)init;
 
@@ -23,6 +23,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Can be called at any time once the underlying class has enough samples.
 - (float)getBpm;
+
+- (int)getBeats;
 
 @end
 

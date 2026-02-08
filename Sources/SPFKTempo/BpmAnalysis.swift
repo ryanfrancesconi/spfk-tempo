@@ -1,4 +1,4 @@
-// Copyright Ryan Francesconi. All Rights Reserved. Revision History at https://github.com/ryanfrancesconi/spfk-audio
+// Copyright Ryan Francesconi. All Rights Reserved. Revision History at https://github.com/ryanfrancesconi/spfk-tempo
 
 import AVFoundation
 import Foundation
@@ -6,18 +6,19 @@ import SPFKAudioBase
 import SPFKBase
 import SPFKTempoC
 
-public actor BpmAnalysis: Sendable {
-    private var task: Task<Bpm, Error>?
+public struct BpmAnalysis: Sendable {
+    private let bufferDuration: TimeInterval
+    private let eventHandler: BpmAnalysisEventHandler?
+    private let matchesRequired: Int?
 
-    let bufferDuration: TimeInterval
-
-    public var eventHandler: BpmAnalysisEventHandler?
-    public func update(eventHandler: BpmAnalysisEventHandler?) {
-        self.eventHandler = eventHandler
-    }
-
-    public init(bufferDuration: TimeInterval = 0.2) {
+    public init(
+        bufferDuration: TimeInterval = 0.2,
+        matchesRequired: Int? = nil,
+        eventHandler: BpmAnalysisEventHandler? = nil
+    ) {
         self.bufferDuration = max(0.1, bufferDuration)
+        self.matchesRequired = matchesRequired
+        self.eventHandler = eventHandler
     }
 
     public func process(url: URL) async throws -> Bpm {
@@ -25,8 +26,7 @@ public actor BpmAnalysis: Sendable {
     }
 
     public func process(audioFile: AVAudioFile) async throws -> Bpm {
-        let benchmark = Benchmark(label: "\((#file as NSString).lastPathComponent):\(#function)")
-        defer { benchmark.stop() }
+        Log.debug(audioFile.url.lastPathComponent, audioFile.duration, "seconds")
 
         // store the current frame before scanning the file
         let currentFrame = audioFile.framePosition
@@ -36,60 +36,36 @@ public actor BpmAnalysis: Sendable {
             audioFile.framePosition = currentFrame
         }
 
-        let task = Task<Bpm, Error>(priority: .high) {
-            try await _process(audioFile: audioFile)
-        }
+        let results = try await _progress(audioFile: audioFile)
 
-        self.task = task
+        let bpm = try chooseMostLikelyBpm(from: results)
 
-        let result = await task.result
+        await eventHandler?(.complete(url: audioFile.url, value: bpm))
 
-        guard !task.isCancelled else {
-            throw CancellationError()
-        }
-
-        switch result {
-        case let .success(value):
-            return value
-
-        case let .failure(error):
-            Log.error("Failed parsing \(audioFile.url)", error)
-            throw error
-        }
+        return bpm
     }
 
-    public func cancel() {
-        guard let task else {
-            Log.error("task is nil")
-            return
-        }
-
-        task.cancel()
-    }
-
-    private func _process(audioFile: AVAudioFile) async throws -> Bpm {
+    private func _progress(audioFile: AVAudioFile) async throws -> [Bpm] {
         let totalFrames = AVAudioFrameCount(audioFile.length)
         let totalFramesDouble = Double(totalFrames)
-        let sampleRate = audioFile.fileFormat.sampleRate
+        let pcmFormat: AVAudioFormat = audioFile.processingFormat
 
         guard totalFrames > 0 else {
             throw NSError(description: "No audio was found in \(audioFile.url.path)")
         }
 
         func send(progress: UnitInterval) async {
-            await eventHandler?(.loading(url: audioFile.url, progress: progress))
+            await eventHandler?(.progress(url: audioFile.url, value: progress))
         }
 
-        Log.debug(audioFile.url.lastPathComponent, audioFile.duration, "seconds")
-
         // analysis buffer size
-        var framesPerBuffer = AVAudioFrameCount(bufferDuration * sampleRate) // x seconds
+        var framesPerBuffer = AVAudioFrameCount(bufferDuration * pcmFormat.sampleRate)
 
         if framesPerBuffer > totalFrames {
             framesPerBuffer = totalFrames
         }
 
-        let pcmFormat: AVAudioFormat = audioFile.processingFormat
+        Log.debug(pcmFormat)
 
         guard
             let buffer = AVAudioPCMBuffer(
@@ -102,16 +78,20 @@ public actor BpmAnalysis: Sendable {
 
         var currentFrame: AVAudioFramePosition = 0
 
-        var sinceLastMark: AVAudioFrameCount = 0
-        let checkBpmAt: AVAudioFrameCount = AVAudioFrameCount(sampleRate) * 4
-        var bpms: [Bpm] = []
+        // check for rolling bpm every 4 seconds
+        let checkBpmAt: AVAudioFrameCount = AVAudioFrameCount(pcmFormat.sampleRate) * 4
+        var framesSinceLastDetect: AVAudioFrameCount = 0
 
-        let bpmDetect: BPMDetectC = .init(format: pcmFormat)
+        var results: [Bpm] = []
+        let bpmDetect: DetectTempo = .init(format: pcmFormat)
 
         while currentFrame < totalFrames {
+            try Task.checkCancellation()
+
             audioFile.framePosition = currentFrame
 
             let progress: UnitInterval = Double(currentFrame) / totalFramesDouble
+
             await send(progress: progress)
 
             try audioFile.read(into: buffer, frameCount: framesPerBuffer)
@@ -132,28 +112,29 @@ public actor BpmAnalysis: Sendable {
                 guard framesPerBuffer > 0 else { break }
             }
 
-            sinceLastMark += framesPerBuffer
+            framesSinceLastDetect += framesPerBuffer
 
-            if sinceLastMark > checkBpmAt {
+            if framesSinceLastDetect > checkBpmAt {
                 let value = bpmDetect.getBpm().double.rounded(.toNearestOrAwayFromZero)
 
-                if let bpm = try? Bpm(value) {
-                    bpms.append(bpm)
+                if let bpm = Bpm(value) {
+                    results.append(bpm)
 
-                    Log.debug("\(audioFile.url.lastPathComponent) BPM @ \(currentFrame)", bpm)
+                    Log.debug(progress, "\(audioFile.url.lastPathComponent) bpm @ \(currentFrame)", bpm)
 
-                    if bpms.count(of: bpm) >= 4 {
-                        Log.debug("Returning early found \(bpms) enough multiples of", bpm)
-                        return bpm
+                    let count = results.count(of: bpm)
+
+                    if let matchesRequired, count >= matchesRequired {
+                        Log.debug("Returning early found \(count) duplicates of", bpm)
+                        return results
                     }
                 }
-                sinceLastMark = 0
+
+                framesSinceLastDetect = 0
             }
         }
 
-        await send(progress: 1)
-
-        return try chooseMostLikelyBpm(from: bpms)
+        return results
     }
 
     func chooseMostLikelyBpm(from bpms: [Bpm]) throws -> Bpm {
@@ -161,18 +142,19 @@ public actor BpmAnalysis: Sendable {
             throw NSError(description: "failed to detect bpm")
         }
 
-        let frequencyMap = bpms.reduce(into: [:]) { counts, value in
+        // order bpms by how many repeat values there are
+        let frequencyMap: [(key: Bpm, value: Int)] = bpms.reduce(into: [:]) { counts, value in
             counts[value, default: 0] += 1
+        }.sorted { lhs, rhs in
+            lhs.value > rhs.value
         }
 
-        let multiples = frequencyMap.filter { $1 > 1 }.keys
-
-        guard let value = multiples.first else {
-            return bpms[0] // unideal, but pick first
+        guard let value = frequencyMap.first else {
+            throw NSError(description: "failed to detect bpm")
         }
 
-        Log.debug("elements which have more than one entry:", multiples, "all:", bpms)
+        Log.debug("sorted results:", frequencyMap)
 
-        return value
+        return value.key
     }
 }
