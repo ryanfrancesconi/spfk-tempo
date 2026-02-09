@@ -117,7 +117,7 @@ public struct BpmAnalysis: Sendable {
             if framesSinceLastDetect > checkBpmAt {
                 let value = bpmDetect.getBpm().double.rounded(.toNearestOrAwayFromZero)
 
-                if let bpm = Bpm(value) {
+                if value > 0, let bpm = Bpm(value) {
                     results.append(bpm)
 
                     Log.debug(progress, "\(audioFile.url.lastPathComponent) bpm @ \(currentFrame)", bpm)
