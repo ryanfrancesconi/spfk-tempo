@@ -14,10 +14,9 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(url: "https://github.com/ryanfrancesconi/CXXSoundTouch", branch: "development"),
-
-        .package(url: "https://github.com/ryanfrancesconi/spfk-utils", branch: "development"),
-        .package(url: "https://github.com/ryanfrancesconi/spfk-testing", branch: "development"),
+        .package(url: "https://github.com/ryanfrancesconi/CXXSoundTouch", from: "2.1.2"),
+        .package(url: "https://github.com/ryanfrancesconi/spfk-utils", from: "0.0.1"),
+        .package(url: "https://github.com/ryanfrancesconi/spfk-testing", from: "0.0.1"),
     ],
     targets: [
         .target(
