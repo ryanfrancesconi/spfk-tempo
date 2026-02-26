@@ -6,15 +6,10 @@
 #import "BPMDetect.h"
 #import "STTypes.h"
 
-//#import "MiniBpm.h"
-
 #import "DetectTempo.h"
 
 @implementation DetectTempo {
     soundtouch::BPMDetect *_bpmDetect;
-
-    // temp, here for comparison
-    // breakfastquay::MiniBPM *_miniBpm;
 }
 
 - (instancetype)init {
@@ -27,8 +22,6 @@
 
     if (self) {
         _bpmDetect = new soundtouch::BPMDetect(numberOfChannels, sampleRate);
-
-        // _miniBpm = new breakfastquay::MiniBPM((float)sampleRate);
     }
 
     return self;
@@ -41,14 +34,10 @@
 
 - (void)process:(const float *)data numberOfSamples:(int)numberOfSamples {
     _bpmDetect->inputSamples(data, numberOfSamples);
-
-    //_miniBpm->process(data, numberOfSamples);
 }
 
 - (float)getBpm {
     return _bpmDetect->getBpm();
-
-    //return (float)_miniBpm->estimateTempo();
 }
 
 - (int)getBeats {
@@ -60,11 +49,6 @@
         delete _bpmDetect;
         _bpmDetect = nullptr;
     }
-
-//    if (_miniBpm) {
-//        delete _miniBpm;
-//        _miniBpm = nullptr;
-//    }
 }
 
 @end
