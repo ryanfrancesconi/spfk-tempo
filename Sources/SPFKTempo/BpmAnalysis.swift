@@ -79,7 +79,7 @@ public struct BpmAnalysis: Sendable {
         var currentFrame: AVAudioFramePosition = 0
 
         // check for rolling bpm every 4 seconds
-        let checkBpmAt: AVAudioFrameCount = AVAudioFrameCount(pcmFormat.sampleRate) * 4
+        let performCheckAt: AVAudioFrameCount = AVAudioFrameCount(pcmFormat.sampleRate) * 4
         var framesSinceLastDetect: AVAudioFrameCount = 0
 
         var results: [Bpm] = []
@@ -114,7 +114,7 @@ public struct BpmAnalysis: Sendable {
 
             framesSinceLastDetect += framesPerBuffer
 
-            if framesSinceLastDetect > checkBpmAt {
+            if framesSinceLastDetect > performCheckAt {
                 let value = bpmDetect.getBpm().double.rounded(.toNearestOrAwayFromZero)
 
                 if value > 0, let bpm = Bpm(value) {
