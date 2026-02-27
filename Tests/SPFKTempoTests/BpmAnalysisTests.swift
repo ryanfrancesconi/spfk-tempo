@@ -73,21 +73,21 @@ class BpmAnalysisTests: TestCaseModel {
 
         let result = await task.result
         Log.debug(result)
-        
+
         #expect(result.isSuccess)
 
         #expect(result.successValue == Bpm(61))
     }
 
-    @Test func chooseMostLikelyBpm() async throws {
-        let list: [Bpm] = [
-            Bpm(1),
-            Bpm(2),
-            Bpm(2),
-            Bpm(3)
-        ].compactMap(\.self)
+    @Test func mostLikely() async throws {
+        let list: CountableResult<Bpm> = [
+            Bpm(1)!,
+            Bpm(2)!,
+            Bpm(2)!,
+            Bpm(3)!
+        ]
 
-        let result = BpmResults.mostLikelyBpm(from: list)
+        let result: Bpm = list.mostLikely()!
 
         #expect(result == Bpm(2))
     }
