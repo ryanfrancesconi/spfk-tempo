@@ -1,15 +1,18 @@
+
 // Copyright Ryan Francesconi. All Rights Reserved. Revision History at https://github.com/ryanfrancesconi/spfk-tempo
 
 import AVFoundation
 import Foundation
 import SPFKAudioBase
 import SPFKBase
-@preconcurrency import SPFKTempoC
 
-public actor BpmAnalysis: Sendable {
+public typealias BpmAnalysis = BpmAnalysis_S
+
+public actor BpmAnalysis_S: Sendable {
     private let bufferDuration: TimeInterval
     private let eventHandler: URLProgressEventHandler?
-    private let bpmDetect: DetectTempo
+    private var bpmDetection: BpmDetection
+
     private let audioFile: AVAudioFile
     private var results: CountableResult<Bpm>
 
@@ -42,7 +45,8 @@ public actor BpmAnalysis: Sendable {
         self.audioFile = audioFile
 
         results = CountableResult(matchesRequired: matchesRequired)
-        bpmDetect = DetectTempo(format: audioFile.processingFormat)
+
+        bpmDetection = BpmDetection(sampleRate: audioFile.processingFormat.sampleRate.float)
     }
 
     public func process() async throws -> Bpm {
@@ -62,7 +66,7 @@ public actor BpmAnalysis: Sendable {
 
         _ = await processTask?.result
 
-        guard let bpm = results.mostLikely() else {
+        guard let bpm = results.choose() else {
             throw NSError(description: "Failed to detect bpm")
         }
 
@@ -75,18 +79,16 @@ public actor BpmAnalysis: Sendable {
             await eventHandler?(.progress(url: url, value: value))
 
         case .periodicProgress:
-            let value = Double(bpmDetect.getBpm()).rounded(.toNearestOrAwayFromZero)
+            let value = bpmDetection.estimateTempo().floor // .rounded(.toNearestOrAwayFromZero)
 
-            if let bpm = Bpm(value), results.append(bpm)
+            if let bpm = Bpm(value),
+               results.append(bpm)
             { // true and it thinks it has a solid Bpm, so cancel the task
                 processTask?.cancel()
             }
 
         case .data(format: _, length: let length, samples: let samples):
-            bpmDetect.process(
-                samples.pointee,
-                numberOfSamples: Int32(length)
-            )
+            bpmDetection.process(samples.pointee, Int(length))
 
         case .complete:
             break

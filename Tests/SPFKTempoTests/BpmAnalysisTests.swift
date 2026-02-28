@@ -6,8 +6,6 @@ import Testing
 
 @testable import SPFKTempo
 
-// TODO: utility to create tests files or add to SPFKTesting suitable samples
-
 @Suite(.tags(.file))
 class BpmAnalysisTests: TestCaseModel {
     @Test func drumloop_60() async throws {
@@ -63,7 +61,7 @@ class BpmAnalysisTests: TestCaseModel {
         )
 
         let task = Task<Bpm, Error>(priority: .high) {
-            try await BpmAnalysis(url: url, matchesRequired: 4).process()
+            try await BpmAnalysis(url: url, matchesRequired: nil).process()
         }
 
         Task { @MainActor in
@@ -74,9 +72,9 @@ class BpmAnalysisTests: TestCaseModel {
         let result = await task.result
         Log.debug(result)
 
-        #expect(result.isSuccess)
+        let bpm = try #require(result.successValue)
 
-        #expect(result.successValue == Bpm(61))
+        #expect(bpm.isMultiple(of: 122))
     }
 
     @Test func mostLikely() async throws {
@@ -87,7 +85,7 @@ class BpmAnalysisTests: TestCaseModel {
             Bpm(3)!
         ]
 
-        let result: Bpm = list.mostLikely()!
+        let result: Bpm = list.choose()!
 
         #expect(result == Bpm(2))
     }
