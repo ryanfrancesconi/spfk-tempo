@@ -91,9 +91,11 @@ public final class BpmDetection {
         stepSize = max(1, blockSize / 2)
 
         lowFrequencyFilterbank = FourierFilterbank(
-            n: blockSize, fs: inputSampleRate, minFreq: lfMin, maxFreq: lfMax, windowed: true)
+            n: blockSize, fs: inputSampleRate, minFreq: lfMin, maxFreq: lfMax, windowed: true
+        )
         highFrequencyFilterbank = FourierFilterbank(
-            n: blockSize, fs: inputSampleRate, minFreq: hfMin, maxFreq: hfMax, windowed: true)
+            n: blockSize, fs: inputSampleRate, minFreq: hfMin, maxFreq: hfMax, windowed: true
+        )
 
         inputBlock = Array(repeating: 0, count: blockSize)
         pendingStepSamples = Array(repeating: 0, count: stepSize)
@@ -130,7 +132,9 @@ public final class BpmDetection {
 
     private func processInputBlock() {
         var blockEnergy: Float = 0
-        for sample in inputBlock { blockEnergy += sample * sample }
+        for sample in inputBlock {
+            blockEnergy += sample * sample
+        }
         blockRmsEnvelope.append(sqrt(blockEnergy / Float(blockSize)))
 
         inputBlock.withUnsafeBufferPointer { inBuf in
@@ -171,8 +175,12 @@ public final class BpmDetection {
     public func estimateTempo() -> Double {
         if pendingStepFillCount > 0 {
             let hole = blockSize - stepSize
-            for i in 0 ..< pendingStepFillCount { inputBlock[hole + i] = pendingStepSamples[i] }
-            for i in pendingStepFillCount ..< stepSize { inputBlock[hole + i] = 0 }
+            for i in 0 ..< pendingStepFillCount {
+                inputBlock[hole + i] = pendingStepSamples[i]
+            }
+            for i in pendingStepFillCount ..< stepSize {
+                inputBlock[hole + i] = 0
+            }
             pendingStepFillCount = 0
             processInputBlock()
         }
@@ -205,7 +213,9 @@ public final class BpmDetection {
 
         var i = 0
         while i + blockSize < samples.count {
-            for j in 0 ..< blockSize { inputBlock[j] = samples[i + j] }
+            for j in 0 ..< blockSize {
+                inputBlock[j] = samples[i + j]
+            }
             processInputBlock()
             i += stepSize
         }
@@ -229,17 +239,23 @@ public final class BpmDetection {
                 break
             }
 
-            for i in 0 ..< pendingStepFillCount { inputBlock[hole + i] = pendingStepSamples[i] }
+            for i in 0 ..< pendingStepFillCount {
+                inputBlock[hole + i] = pendingStepSamples[i]
+            }
 
             let toConsume = stepSize - pendingStepFillCount
-            for i in 0 ..< toConsume { inputBlock[hole + pendingStepFillCount + i] = samples[consumedSampleCount + i] }
+            for i in 0 ..< toConsume {
+                inputBlock[hole + pendingStepFillCount + i] = samples[consumedSampleCount + i]
+            }
 
             consumedSampleCount += toConsume
             pendingStepFillCount = 0
 
             processInputBlock()
 
-            for i in 0 ..< hole { inputBlock[i] = inputBlock[i + stepSize] }
+            for i in 0 ..< hole {
+                inputBlock[i] = inputBlock[i + stepSize]
+            }
         }
     }
 
@@ -255,7 +271,9 @@ public final class BpmDetection {
         let maxBPM = options.bpmRange.upperBound
         let barPM = minBPM / Float(4 * options.beatsPerBar)
         var acfLength = AutocorrelationFFT.bpmToLag(barPM, hopsPerSec: hopsPerSec)
-        while acfLength > onsetFrameCount { acfLength /= 2 }
+        while acfLength > onsetFrameCount {
+            acfLength /= 2
+        }
         if acfLength <= 0 { return 0 }
 
         if autocorrelationBuffer.count < acfLength { autocorrelationBuffer = Array(repeating: 0, count: acfLength) }
@@ -266,29 +284,40 @@ public final class BpmDetection {
         }
 
         autocorrelation.acfUnityNormalised(
-            input: lowFrequencyFlux, lagCount: acfLength, output: &autocorrelationScratch)
-        for i in 0 ..< acfLength { autocorrelationBuffer[i] += autocorrelationScratch[i] }
+            input: lowFrequencyFlux, lagCount: acfLength, output: &autocorrelationScratch
+        )
+        for i in 0 ..< acfLength {
+            autocorrelationBuffer[i] += autocorrelationScratch[i]
+        }
 
         autocorrelation.acfUnityNormalised(
-            input: highFrequencyFlux, lagCount: acfLength, output: &autocorrelationScratch)
-        for i in 0 ..< acfLength { autocorrelationBuffer[i] += autocorrelationScratch[i] * 0.5 }
+            input: highFrequencyFlux, lagCount: acfLength, output: &autocorrelationScratch
+        )
+        for i in 0 ..< acfLength {
+            autocorrelationBuffer[i] += autocorrelationScratch[i] * 0.5
+        }
 
         autocorrelation.acfUnityNormalised(
-            input: blockRmsEnvelope, lagCount: acfLength, output: &autocorrelationScratch)
-        for i in 0 ..< acfLength { autocorrelationBuffer[i] += autocorrelationScratch[i] * 0.1 }
+            input: blockRmsEnvelope, lagCount: acfLength, output: &autocorrelationScratch
+        )
+        for i in 0 ..< acfLength {
+            autocorrelationBuffer[i] += autocorrelationScratch[i] * 0.1
+        }
 
         let minLag = AutocorrelationFFT.bpmToLag(maxBPM, hopsPerSec: hopsPerSec)
         let maxLag = AutocorrelationFFT.bpmToLag(minBPM, hopsPerSec: hopsPerSec)
         if acfLength < maxLag { return 0 }
 
         let comb = ACFCombFilter(
-            beatsPerBar: options.beatsPerBar, minLag: minLag, maxLag: maxLag, hopsPerSec: hopsPerSec)
+            beatsPerBar: options.beatsPerBar, minLag: minLag, maxLag: maxLag, hopsPerSec: hopsPerSec
+        )
         let combFilterLength = comb.filteredLength()
         if combFilterBuffer.count < combFilterLength { combFilterBuffer = Array(repeating: 0, count: combFilterLength) }
         if templateScores.count < combFilterLength { templateScores = Array(repeating: 0, count: combFilterLength) }
 
         comb.filter(
-            autocorrelation: autocorrelationBuffer, autocorrelationLength: acfLength, filtered: &combFilterBuffer)
+            autocorrelation: autocorrelationBuffer, autocorrelationLength: acfLength, filtered: &combFilterBuffer
+        )
         unityNormalise(&combFilterBuffer, count: combFilterLength)
 
         let blend = max(0.0, min(1.0, options.perceptualWeightingAmount))
@@ -325,7 +354,7 @@ public final class BpmDetection {
 
         if combFilterLength >= 3 {
             for i in 1 ..< (combFilterLength - 1) {
-                if templateScores[i] > templateScores[i - 1] && templateScores[i] > templateScores[i + 1] {
+                if templateScores[i] > templateScores[i - 1], templateScores[i] > templateScores[i + 1] {
                     peaks.append((templateScores[i], i))
                 }
             }
@@ -340,7 +369,8 @@ public final class BpmDetection {
         for peak in peaks {
             let lag = peak.idx + minLag
             let coarseBPM = comb.refine(
-                lag: lag, autocorrelation: autocorrelationBuffer, autocorrelationLength: acfLength)
+                lag: lag, autocorrelation: autocorrelationBuffer, autocorrelationLength: acfLength
+            )
             let lagGuess = (60.0 * hopsPerSec) / coarseBPM
             let refinedLag = refineFundamentalLag(
                 guessLag: lagGuess,
@@ -439,7 +469,7 @@ public final class BpmDetection {
         let leftValue = autocorrelationSequence[peakIndex - 1]
         let centerValue = autocorrelationSequence[peakIndex]
         let rightValue = autocorrelationSequence[peakIndex + 1]
-        if centerValue > leftValue && centerValue > rightValue {
+        if centerValue > leftValue, centerValue > rightValue {
             let denominator = leftValue - 2 * centerValue + rightValue
             if denominator != 0 {
                 interpolatedPeakIndex += ((leftValue - rightValue) / denominator) / 2
