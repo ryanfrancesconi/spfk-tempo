@@ -20,8 +20,9 @@ public actor BpmAnalysis_S: Sendable {
 
     public init(
         url: URL,
-        bufferDuration: TimeInterval = 0.2,
+        bufferDuration: TimeInterval = 1,
         matchesRequired: Int? = nil,
+        tolerance: Double = 0,
         eventHandler: URLProgressEventHandler? = nil
     ) throws {
         let audioFile = try AVAudioFile(forReading: url)
@@ -30,21 +31,29 @@ public actor BpmAnalysis_S: Sendable {
             audioFile: audioFile,
             bufferDuration: bufferDuration,
             matchesRequired: matchesRequired,
+            tolerance: tolerance,
             eventHandler: eventHandler
         )
     }
 
     public init(
         audioFile: AVAudioFile,
-        bufferDuration: TimeInterval = 0.2,
+        bufferDuration: TimeInterval = 1,
         matchesRequired: Int? = nil,
+        tolerance: Double = 0,
         eventHandler: URLProgressEventHandler? = nil
     ) {
         self.bufferDuration = max(0.1, bufferDuration)
         self.eventHandler = eventHandler
         self.audioFile = audioFile
 
-        results = CountableResult(matchesRequired: matchesRequired)
+        if tolerance > 0 {
+            results = CountableResult(matchesRequired: matchesRequired) { a, b in
+                a.isMultiple(of: b, tolerance: tolerance)
+            }
+        } else {
+            results = CountableResult(matchesRequired: matchesRequired)
+        }
 
         bpmDetection = BpmDetection(sampleRate: audioFile.processingFormat.sampleRate.float)
     }
@@ -79,7 +88,7 @@ public actor BpmAnalysis_S: Sendable {
             await eventHandler?(.progress(url: url, value: value))
 
         case .periodicProgress:
-            let value = bpmDetection.estimateTempo().floor // .rounded(.toNearestOrAwayFromZero)
+            let value = bpmDetection.estimateTempo().rounded(.toNearestOrAwayFromZero)
 
             if let bpm = Bpm(value),
                results.append(bpm)

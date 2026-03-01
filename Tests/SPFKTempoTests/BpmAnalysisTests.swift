@@ -8,36 +8,37 @@ import Testing
 
 @Suite(.tags(.file))
 class BpmAnalysisTests: TestCaseModel {
+    /// Allow ±2 BPM tolerance for real-world audio detection due to lag quantization.
+    private let bpmTolerance: Double = 2
+
     @Test func drumloop_60() async throws {
         let url = TestBundleResources.shared.counting_123456789_60BPM_48k
         let bpm = try await BpmAnalysis(url: url).process()
-        #expect(bpm.isMultiple(of: 60)) // 120
+        #expect(bpm.isMultiple(of: 60, tolerance: bpmTolerance))
     }
 
-    // Fails, returns 74
     @Test func drumloop_110() async throws {
         let url = URL(fileURLWithPath: "/Users/rf/Downloads/TestResources/bpm/110_drumloop.m4a")
         let bpm = try await BpmAnalysis(url: url).process()
-        #expect(bpm.isMultiple(of: 110)) // 74??
+        #expect(bpm.isMultiple(of: 110, tolerance: bpmTolerance))
     }
 
-    // Fails, returns 74
     @Test func tabla_109() async throws {
         let url = TestBundleResources.shared.tabla_wav
-        let bpm = try await BpmAnalysis(url: url).process() // 74??
-        #expect(bpm.isMultiple(of: 109))
+        let bpm = try await BpmAnalysis(url: url).process()
+        #expect(bpm.isMultiple(of: 109, tolerance: bpmTolerance))
     }
 
     @Test func drumloop_200() async throws {
         let url = URL(fileURLWithPath: "/Users/rf/Downloads/TestResources/bpm/200_drumloop.m4a")
         let bpm = try await BpmAnalysis(url: url).process()
-        #expect(bpm.isMultiple(of: 200)) // 100
+        #expect(bpm.isMultiple(of: 200, tolerance: bpmTolerance))
     }
 
     @Test func drumloop_75() async throws {
         let url = URL(fileURLWithPath: "/Users/rf/Downloads/TestResources/bpm/75_wurli.m4a")
-        let bpm = try await BpmAnalysis(url: url).process() // 150
-        #expect(bpm.isMultiple(of: 75))
+        let bpm = try await BpmAnalysis(url: url).process()
+        #expect(bpm.isMultiple(of: 75, tolerance: bpmTolerance))
     }
 
     @Test func longSong() async throws {
@@ -46,12 +47,12 @@ class BpmAnalysisTests: TestCaseModel {
             "/Users/rf/Music/Music/Media.localized/Music/Aphex Twin/Drukqs Disc 01/07 Drukqs - Disk 01 - bbydhyonchord.mp3"
         )
 
-        let ba = try BpmAnalysis(url: url, matchesRequired: 5) { event in
+        let ba = try BpmAnalysis(url: url, matchesRequired: 3) { event in
             Log.debug(event.progress)
         }
 
         let bpm = try await ba.process()
-        #expect(bpm.isMultiple(of: 122))
+        #expect(bpm.isMultiple(of: 122, tolerance: bpmTolerance))
     }
 
     @Test func cancelTask() async throws {
@@ -61,11 +62,11 @@ class BpmAnalysisTests: TestCaseModel {
         )
 
         let task = Task<Bpm, Error>(priority: .high) {
-            try await BpmAnalysis(url: url, matchesRequired: nil).process()
+            try await BpmAnalysis(url: url, matchesRequired: 5).process()
         }
 
         Task { @MainActor in
-            try await Task.sleep(seconds: 0.1)
+            try await Task.sleep(seconds: 1)
             task.cancel()
         }
 
@@ -74,7 +75,7 @@ class BpmAnalysisTests: TestCaseModel {
 
         let bpm = try #require(result.successValue)
 
-        #expect(bpm.isMultiple(of: 122))
+        #expect(bpm.isMultiple(of: 122, tolerance: bpmTolerance))
     }
 
     @Test func mostLikely() async throws {

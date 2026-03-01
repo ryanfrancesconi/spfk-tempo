@@ -18,8 +18,9 @@ public actor BpmAnalysis_C: Sendable {
 
     public init(
         url: URL,
-        bufferDuration: TimeInterval = 0.2,
+        bufferDuration: TimeInterval = 1,
         matchesRequired: Int? = nil,
+        tolerance: Double = 0,
         eventHandler: URLProgressEventHandler? = nil
     ) throws {
         let audioFile = try AVAudioFile(forReading: url)
@@ -28,21 +29,29 @@ public actor BpmAnalysis_C: Sendable {
             audioFile: audioFile,
             bufferDuration: bufferDuration,
             matchesRequired: matchesRequired,
+            tolerance: tolerance,
             eventHandler: eventHandler
         )
     }
 
     public init(
         audioFile: AVAudioFile,
-        bufferDuration: TimeInterval = 0.2,
+        bufferDuration: TimeInterval = 1,
         matchesRequired: Int? = nil,
+        tolerance: Double = 0,
         eventHandler: URLProgressEventHandler? = nil
     ) {
         self.bufferDuration = max(0.1, bufferDuration)
         self.eventHandler = eventHandler
         self.audioFile = audioFile
 
-        results = CountableResult(matchesRequired: matchesRequired)
+        if tolerance > 0 {
+            results = CountableResult(matchesRequired: matchesRequired) { a, b in
+                a.isMultiple(of: b, tolerance: tolerance)
+            }
+        } else {
+            results = CountableResult(matchesRequired: matchesRequired)
+        }
 
         bpmDetect = DetectTempo(format: audioFile.processingFormat)
     }

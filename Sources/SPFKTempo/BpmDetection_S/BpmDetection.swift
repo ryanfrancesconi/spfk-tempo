@@ -14,10 +14,17 @@ public final class BpmDetection {
         public var harmonicWeight2: Float
         public var harmonicWeight3: Float
         public var harmonicWeight4: Float
-        public var subharmonicPenalty2: Float
-        public var subharmonicPenalty3: Float
+        // Penalize candidates whose double-tempo (lag/2) or triple-tempo (lag/3) harmonic
+        // is strong, reducing over-fast octave errors.
+        public var harmonicPenalty2: Float
+        public var harmonicPenalty3: Float
         // Blend template score with comb score. 0 = comb only, 1 = template only.
         public var templateBlend: Float
+        // Autocorrelation signal weights for multi-band combination.
+        public var lowFrequencyWeight: Float
+        public var midFrequencyWeight: Float
+        public var highFrequencyWeight: Float
+        public var rmsWeight: Float
 
         public init(
             bpmRange: ClosedRange<Float> = 40 ... 300,
@@ -28,9 +35,13 @@ public final class BpmDetection {
             harmonicWeight2: Float = 0.25,
             harmonicWeight3: Float = 0.10,
             harmonicWeight4: Float = 0.05,
-            subharmonicPenalty2: Float = 0.10,
-            subharmonicPenalty3: Float = 0.03,
-            templateBlend: Float = 0.35
+            harmonicPenalty2: Float = 0.10,
+            harmonicPenalty3: Float = 0.03,
+            templateBlend: Float = 0.35,
+            lowFrequencyWeight: Float = 1.0,
+            midFrequencyWeight: Float = 0.8,
+            highFrequencyWeight: Float = 0.5,
+            rmsWeight: Float = 0.1
         ) {
             self.bpmRange = bpmRange
             self.beatsPerBar = beatsPerBar
@@ -40,9 +51,13 @@ public final class BpmDetection {
             self.harmonicWeight2 = harmonicWeight2
             self.harmonicWeight3 = harmonicWeight3
             self.harmonicWeight4 = harmonicWeight4
-            self.subharmonicPenalty2 = subharmonicPenalty2
-            self.subharmonicPenalty3 = subharmonicPenalty3
+            self.harmonicPenalty2 = harmonicPenalty2
+            self.harmonicPenalty3 = harmonicPenalty3
             self.templateBlend = templateBlend
+            self.lowFrequencyWeight = lowFrequencyWeight
+            self.midFrequencyWeight = midFrequencyWeight
+            self.highFrequencyWeight = highFrequencyWeight
+            self.rmsWeight = rmsWeight
         }
     }
 
@@ -53,10 +68,12 @@ public final class BpmDetection {
     private let stepSize: Int
 
     private let lowFrequencyFilterbank: FourierFilterbank
+    private let midFrequencyFilterbank: FourierFilterbank
     private let highFrequencyFilterbank: FourierFilterbank
     private let autocorrelation = AutocorrelationFFT()
 
     private var lowFrequencyFlux: [Float] = []
+    private var midFrequencyFlux: [Float] = []
     private var highFrequencyFlux: [Float] = []
     private var blockRmsEnvelope: [Float] = []
 
@@ -67,8 +84,10 @@ public final class BpmDetection {
     private var pendingStepFillCount = 0
 
     private var lowFrequencyPreviousSpectrum: [Float]
+    private var midFrequencyPreviousSpectrum: [Float]
     private var highFrequencyPreviousSpectrum: [Float]
     private var lowFrequencySpectrum: [Float]
+    private var midFrequencySpectrum: [Float]
     private var highFrequencySpectrum: [Float]
 
     // finish() scratch
@@ -83,15 +102,20 @@ public final class BpmDetection {
 
         let lfMin: Float = 0
         let lfMax: Float = 550
-        let hfMin: Float = 9000
-        let hfMax: Float = 9001
+        let mfMin: Float = 550
+        let mfMax: Float = 4000
+        let hfMin: Float = 4000
+        let hfMax: Float = 16000
         let lfBinMax = 6
 
         blockSize = Int((inputSampleRate * Float(lfBinMax)) / lfMax)
-        stepSize = max(1, blockSize / 2)
+        stepSize = max(1, blockSize / 4)
 
         lowFrequencyFilterbank = FourierFilterbank(
             n: blockSize, fs: inputSampleRate, minFreq: lfMin, maxFreq: lfMax, windowed: true
+        )
+        midFrequencyFilterbank = FourierFilterbank(
+            n: blockSize, fs: inputSampleRate, minFreq: mfMin, maxFreq: mfMax, windowed: true
         )
         highFrequencyFilterbank = FourierFilterbank(
             n: blockSize, fs: inputSampleRate, minFreq: hfMin, maxFreq: hfMax, windowed: true
@@ -101,8 +125,10 @@ public final class BpmDetection {
         pendingStepSamples = Array(repeating: 0, count: stepSize)
 
         lowFrequencyPreviousSpectrum = Array(repeating: 0, count: lowFrequencyFilterbank.outputBinCount)
+        midFrequencyPreviousSpectrum = Array(repeating: 0, count: midFrequencyFilterbank.outputBinCount)
         highFrequencyPreviousSpectrum = Array(repeating: 0, count: highFrequencyFilterbank.outputBinCount)
         lowFrequencySpectrum = Array(repeating: 0, count: lowFrequencyFilterbank.outputBinCount)
+        midFrequencySpectrum = Array(repeating: 0, count: midFrequencyFilterbank.outputBinCount)
         highFrequencySpectrum = Array(repeating: 0, count: highFrequencyFilterbank.outputBinCount)
     }
 
@@ -111,6 +137,7 @@ public final class BpmDetection {
         let estimatedFrames = max(0, nsamples / max(stepSize, 1))
         if estimatedFrames > 0 {
             lowFrequencyFlux.reserveCapacity(lowFrequencyFlux.count + estimatedFrames)
+            midFrequencyFlux.reserveCapacity(midFrequencyFlux.count + estimatedFrames)
             highFrequencyFlux.reserveCapacity(highFrequencyFlux.count + estimatedFrames)
             blockRmsEnvelope.reserveCapacity(blockRmsEnvelope.count + estimatedFrames)
         }
@@ -144,6 +171,14 @@ public final class BpmDetection {
         }
         lowFrequencyFlux.append(positiveSpectralFlux(lowFrequencySpectrum, lowFrequencyPreviousSpectrum))
         lowFrequencyPreviousSpectrum = lowFrequencySpectrum
+
+        inputBlock.withUnsafeBufferPointer { inBuf in
+            midFrequencySpectrum.withUnsafeMutableBufferPointer { outBuf in
+                midFrequencyFilterbank.forwardMagnitude(input: inBuf, output: outBuf)
+            }
+        }
+        midFrequencyFlux.append(positiveSpectralFlux(midFrequencySpectrum, midFrequencyPreviousSpectrum))
+        midFrequencyPreviousSpectrum = midFrequencySpectrum
 
         inputBlock.withUnsafeBufferPointer { inBuf in
             highFrequencySpectrum.withUnsafeMutableBufferPointer { outBuf in
@@ -193,12 +228,17 @@ public final class BpmDetection {
 
     public func reset() {
         lowFrequencyFlux.removeAll(keepingCapacity: true)
+        midFrequencyFlux.removeAll(keepingCapacity: true)
         highFrequencyFlux.removeAll(keepingCapacity: true)
         blockRmsEnvelope.removeAll(keepingCapacity: true)
         tempoCandidates.removeAll(keepingCapacity: true)
         pendingStepFillCount = 0
 
         lowFrequencyPreviousSpectrum.withUnsafeMutableBufferPointer { spectrumBuffer in
+            guard let base = spectrumBuffer.baseAddress else { return }
+            base.update(repeating: 0, count: spectrumBuffer.count)
+        }
+        midFrequencyPreviousSpectrum.withUnsafeMutableBufferPointer { spectrumBuffer in
             guard let base = spectrumBuffer.baseAddress else { return }
             base.update(repeating: 0, count: spectrumBuffer.count)
         }
@@ -212,7 +252,7 @@ public final class BpmDetection {
         reserveForIncomingSamples(samples.count)
 
         var i = 0
-        while i + blockSize < samples.count {
+        while i + blockSize <= samples.count {
             for j in 0 ..< blockSize {
                 inputBlock[j] = samples[i + j]
             }
@@ -259,11 +299,39 @@ public final class BpmDetection {
         }
     }
 
+    /// Subtract a local moving average from the flux signal and half-wave rectify,
+    /// producing a normalised onset function that is less sensitive to overall loudness.
+    /// The window spans approximately 3 seconds of analysis frames.
+    private func normaliseFlux(_ flux: [Float]) -> [Float] {
+        let count = flux.count
+        guard count > 0 else { return flux }
+        let hopsPerSec = inputSampleRate / Float(stepSize)
+        let halfWindow = max(4, Int(hopsPerSec * 1.5))
+        var normalised = [Float](repeating: 0, count: count)
+        for i in 0 ..< count {
+            let windowStart = max(0, i - halfWindow)
+            let windowEnd = min(count, i + halfWindow + 1)
+            var sum: Float = 0
+            for j in windowStart ..< windowEnd {
+                sum += flux[j]
+            }
+            let localMean = sum / Float(windowEnd - windowStart)
+            let diff = flux[i] - localMean
+            normalised[i] = diff > 0 ? diff : 0
+        }
+        return normalised
+    }
+
     private func finish() -> Double {
         tempoCandidates.removeAll(keepingCapacity: true)
 
         let onsetFrameCount = lowFrequencyFlux.count
         if onsetFrameCount == 0 { return 0 }
+
+        // Normalise onset flux signals to reduce loudness bias.
+        let normalisedLowFlux = normaliseFlux(lowFrequencyFlux)
+        let normalisedMidFlux = normaliseFlux(midFrequencyFlux)
+        let normalisedHighFlux = normaliseFlux(highFrequencyFlux)
 
         let hopsPerSec = inputSampleRate / Float(stepSize)
 
@@ -284,24 +352,31 @@ public final class BpmDetection {
         }
 
         autocorrelation.acfUnityNormalised(
-            input: lowFrequencyFlux, lagCount: acfLength, output: &autocorrelationScratch
+            input: normalisedLowFlux, lagCount: acfLength, output: &autocorrelationScratch
         )
         for i in 0 ..< acfLength {
-            autocorrelationBuffer[i] += autocorrelationScratch[i]
+            autocorrelationBuffer[i] += autocorrelationScratch[i] * options.lowFrequencyWeight
         }
 
         autocorrelation.acfUnityNormalised(
-            input: highFrequencyFlux, lagCount: acfLength, output: &autocorrelationScratch
+            input: normalisedMidFlux, lagCount: acfLength, output: &autocorrelationScratch
         )
         for i in 0 ..< acfLength {
-            autocorrelationBuffer[i] += autocorrelationScratch[i] * 0.5
+            autocorrelationBuffer[i] += autocorrelationScratch[i] * options.midFrequencyWeight
+        }
+
+        autocorrelation.acfUnityNormalised(
+            input: normalisedHighFlux, lagCount: acfLength, output: &autocorrelationScratch
+        )
+        for i in 0 ..< acfLength {
+            autocorrelationBuffer[i] += autocorrelationScratch[i] * options.highFrequencyWeight
         }
 
         autocorrelation.acfUnityNormalised(
             input: blockRmsEnvelope, lagCount: acfLength, output: &autocorrelationScratch
         )
         for i in 0 ..< acfLength {
-            autocorrelationBuffer[i] += autocorrelationScratch[i] * 0.1
+            autocorrelationBuffer[i] += autocorrelationScratch[i] * options.rmsWeight
         }
 
         let minLag = AutocorrelationFFT.bpmToLag(maxBPM, hopsPerSec: hopsPerSec)
@@ -380,8 +455,9 @@ public final class BpmDetection {
                 maxLag: maxLag
             )
             let bpm = AutocorrelationFFT.lagToBpm(refinedLag, hopsPerSec: hopsPerSec)
-            let gross = Int((Double(bpm) * 2.0).rounded())
-            if seen.insert(gross).inserted {
+            // Scale dedup quantization relative to BPM: ~1 BPM resolution at all tempos.
+            let quantised = Int(Double(bpm).rounded())
+            if seen.insert(quantised).inserted {
                 tempoCandidates.append(Double(bpm))
             }
         }
@@ -407,15 +483,16 @@ public final class BpmDetection {
             return combResponse[l - minLag]
         }
 
-        // Reward consistency at integer multiples of the same period.
+        // Reward consistency at integer multiples of the same period (slower tempos / longer lags).
         var score = atLag(lag) * options.harmonicWeight1
         score += atLag(lag * 2) * options.harmonicWeight2
         score += atLag(lag * 3) * options.harmonicWeight3
         score += atLag(lag * 4) * options.harmonicWeight4
 
-        // Penalize strong subharmonics that often cause over-fast picks.
-        score -= atLag(max(1, lag / 2)) * options.subharmonicPenalty2
-        score -= atLag(max(1, lag / 3)) * options.subharmonicPenalty3
+        // Penalize candidates whose faster harmonics (shorter lags) are strong,
+        // reducing over-fast octave errors (e.g. picking 120 instead of 60).
+        score -= atLag(max(1, lag / 2)) * options.harmonicPenalty2
+        score -= atLag(max(1, lag / 3)) * options.harmonicPenalty3
 
         return max(0, score)
     }
@@ -450,8 +527,9 @@ public final class BpmDetection {
         maxLag: Int
     ) -> Float {
         let center = Int(guessLag.rounded())
-        let low = max(minLag, max(1, center - 2))
-        let high = min(maxLag, min(acfLength - 2, center + 2))
+        let searchRadius = 5
+        let low = max(minLag, max(1, center - searchRadius))
+        let high = min(maxLag, min(acfLength - 2, center + searchRadius))
         if low > high { return guessLag }
 
         var peakIndex = low
@@ -466,13 +544,15 @@ public final class BpmDetection {
         }
 
         var interpolatedPeakIndex = Float(peakIndex)
-        let leftValue = autocorrelationSequence[peakIndex - 1]
-        let centerValue = autocorrelationSequence[peakIndex]
-        let rightValue = autocorrelationSequence[peakIndex + 1]
-        if centerValue > leftValue, centerValue > rightValue {
-            let denominator = leftValue - 2 * centerValue + rightValue
-            if denominator != 0 {
-                interpolatedPeakIndex += ((leftValue - rightValue) / denominator) / 2
+        if peakIndex > 0, peakIndex + 1 < acfLength {
+            let leftValue = autocorrelationSequence[peakIndex - 1]
+            let centerValue = autocorrelationSequence[peakIndex]
+            let rightValue = autocorrelationSequence[peakIndex + 1]
+            if centerValue > leftValue, centerValue > rightValue {
+                let denominator = leftValue - 2 * centerValue + rightValue
+                if denominator != 0 {
+                    interpolatedPeakIndex += ((leftValue - rightValue) / denominator) / 2
+                }
             }
         }
         return interpolatedPeakIndex

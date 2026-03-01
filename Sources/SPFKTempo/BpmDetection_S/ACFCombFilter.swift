@@ -24,9 +24,10 @@ final class ACFCombFilter {
             return (lag, 1)
         }
 
-        var base = (lag * multiple) - (multiple / 4)
-        let count = (multiple / 4) + (multiple / 2)
-        if base < 0 { base = 0 }
+        let center = lag * multiple
+        let halfWindow = max(1, multiple / 4)
+        let base = max(0, center - halfWindow)
+        let count = halfWindow * 2 + 1
         return (base, count)
     }
 
