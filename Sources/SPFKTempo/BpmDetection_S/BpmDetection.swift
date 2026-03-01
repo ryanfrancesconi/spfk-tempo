@@ -1,99 +1,155 @@
 import Foundation
 
 public final class BpmDetection {
+    /// Controls the tradeoff between detection speed and accuracy.
+    /// Higher quality uses more overlapping analysis windows for finer onset resolution.
+    public enum AnalysisQuality: Int, Sendable {
+        /// No overlap. ~4x faster than `.accurate`, suitable for strong rhythmic material.
+        case fast = 1
+        /// 50% overlap. ~2x faster than `.accurate`, good general-purpose default.
+        case balanced = 2
+        /// 75% overlap. Most accurate onset detection, highest CPU cost.
+        case accurate = 4
+    }
+
     public struct Options {
+        public var quality: AnalysisQuality
         public var bpmRange: ClosedRange<Float>
         public var beatsPerBar: Int
-        // 0.0 = no perceptual tempo bias (most neutral/accurate),
-        // 1.0 = full legacy weighting toward mid-tempo.
+        /// 0.0 = no perceptual tempo bias (most neutral/accurate),
+        /// 1.0 = full legacy weighting toward mid-tempo.
         public var perceptualWeightingAmount: Float
-        // Onset feature tuning.
-        public var fluxCompression: Float
-        // Harmonic template tuning (set all to 0 to fall back to comb-only peak strength).
-        public var harmonicWeight1: Float
-        public var harmonicWeight2: Float
-        public var harmonicWeight3: Float
-        public var harmonicWeight4: Float
-        // Penalize candidates whose double-tempo (lag/2) or triple-tempo (lag/3) harmonic
-        // is strong, reducing over-fast octave errors.
-        public var harmonicPenalty2: Float
-        public var harmonicPenalty3: Float
-        // Blend template score with comb score. 0 = comb only, 1 = template only.
-        public var templateBlend: Float
-        // Autocorrelation signal weights for multi-band combination.
-        public var lowFrequencyWeight: Float
-        public var midFrequencyWeight: Float
-        public var highFrequencyWeight: Float
-        public var rmsWeight: Float
 
         public init(
+            quality: AnalysisQuality = .balanced,
             bpmRange: ClosedRange<Float> = 40 ... 300,
             beatsPerBar: Int = 4,
-            perceptualWeightingAmount: Float = 0.0,
-            fluxCompression: Float = 2.0,
-            harmonicWeight1: Float = 1.0,
-            harmonicWeight2: Float = 0.25,
-            harmonicWeight3: Float = 0.10,
-            harmonicWeight4: Float = 0.05,
-            harmonicPenalty2: Float = 0.10,
-            harmonicPenalty3: Float = 0.03,
-            templateBlend: Float = 0.35,
-            lowFrequencyWeight: Float = 1.0,
-            midFrequencyWeight: Float = 0.8,
-            highFrequencyWeight: Float = 0.5,
-            rmsWeight: Float = 0.1
+            perceptualWeightingAmount: Float = 0.0
         ) {
+            self.quality = quality
             self.bpmRange = bpmRange
             self.beatsPerBar = beatsPerBar
             self.perceptualWeightingAmount = perceptualWeightingAmount
-            self.fluxCompression = fluxCompression
-            self.harmonicWeight1 = harmonicWeight1
-            self.harmonicWeight2 = harmonicWeight2
-            self.harmonicWeight3 = harmonicWeight3
-            self.harmonicWeight4 = harmonicWeight4
-            self.harmonicPenalty2 = harmonicPenalty2
-            self.harmonicPenalty3 = harmonicPenalty3
-            self.templateBlend = templateBlend
-            self.lowFrequencyWeight = lowFrequencyWeight
-            self.midFrequencyWeight = midFrequencyWeight
-            self.highFrequencyWeight = highFrequencyWeight
-            self.rmsWeight = rmsWeight
         }
     }
 
+    // MARK: - Internal DSP tuning constants
+
+    /// Log-compression factor applied to spectral magnitudes before computing onset flux.
+    /// Higher values emphasize quieter onsets; lower values favor loud transients.
+    private let fluxCompression: Float = 2.0
+
+    /// Weight for the fundamental lag in the harmonic template scorer.
+    private let harmonicWeight1: Float = 1.0
+    /// Weight for the 2x lag (half-tempo harmonic) in the template scorer.
+    private let harmonicWeight2: Float = 0.25
+    /// Weight for the 3x lag (third-tempo harmonic) in the template scorer.
+    private let harmonicWeight3: Float = 0.10
+    /// Weight for the 4x lag (quarter-tempo harmonic) in the template scorer.
+    private let harmonicWeight4: Float = 0.05
+
+    /// Penalty applied when the half-lag (double-tempo) shows a strong peak,
+    /// reducing octave-error false positives (e.g. picking 240 instead of 120).
+    private let harmonicPenalty2: Float = 0.10
+    /// Penalty applied when the third-lag (triple-tempo) shows a strong peak.
+    private let harmonicPenalty3: Float = 0.03
+
+    /// Blend between comb-filter score (0.0) and harmonic template score (1.0)
+    /// for the final candidate ranking.
+    private let templateBlend: Float = 0.35
+
+    /// Autocorrelation weight for the low-frequency band (0–550 Hz).
+    /// Kick drums and bass onsets dominate here.
+    private let lowFrequencyWeight: Float = 1.0
+    /// Autocorrelation weight for the mid-frequency band (550–4000 Hz).
+    /// Snare, vocals, and harmonic content.
+    private let midFrequencyWeight: Float = 0.8
+    /// Autocorrelation weight for the high-frequency band (4000–16000 Hz).
+    /// Hi-hats and cymbal transients.
+    private let highFrequencyWeight: Float = 0.5
+    /// Autocorrelation weight for the broadband RMS energy envelope.
+    /// Provides a coarse overall loudness signal.
+    private let rmsWeight: Float = 0.1
+
     public var options: Options
 
+    /// The sample rate of the input audio signal in Hz.
     private let inputSampleRate: Float
+
+    /// FFT analysis frame size in samples. Fixed at 2048 for frequency resolution.
     private let blockSize: Int
+
+    /// Hop size between successive analysis frames, derived from blockSize / quality.
+    /// Smaller values increase overlap and accuracy at the cost of speed.
     private let stepSize: Int
 
+    /// Filterbank extracting spectral energy in the low frequency band (0–550 Hz).
+    /// Captures kick drum and bass content.
     private let lowFrequencyFilterbank: FourierFilterbank
+
+    /// Filterbank extracting spectral energy in the mid frequency band (550–4000 Hz).
+    /// Captures snare, vocals, and harmonic content.
     private let midFrequencyFilterbank: FourierFilterbank
+
+    /// Filterbank extracting spectral energy in the high frequency band (4–16 kHz).
+    /// Captures hi-hats, cymbals, and transient content.
     private let highFrequencyFilterbank: FourierFilterbank
+
+    /// FFT-based autocorrelation engine used to find periodic peaks in onset signals.
     private let autocorrelation = AutocorrelationFFT()
 
+    /// Accumulated spectral flux values for the low frequency band across all analyzed frames.
     private var lowFrequencyFlux: [Float] = []
+
+    /// Accumulated spectral flux values for the mid frequency band across all analyzed frames.
     private var midFrequencyFlux: [Float] = []
+
+    /// Accumulated spectral flux values for the high frequency band across all analyzed frames.
     private var highFrequencyFlux: [Float] = []
+
+    /// RMS energy envelope computed per analysis block, used as a broadband onset signal.
     private var blockRmsEnvelope: [Float] = []
 
+    /// BPM candidates collected from each `estimateTempo()` call for final consensus.
     private var tempoCandidates: [Double] = []
 
+    /// Scratch buffer for accumulating incoming audio samples into full analysis blocks.
     private var inputBlock: [Float]
+
+    /// Buffer holding leftover samples that didn't fill a complete step in the previous call.
     private var pendingStepSamples: [Float]
+
+    /// Number of valid samples currently stored in `pendingStepSamples`.
     private var pendingStepFillCount = 0
 
+    /// Previous frame's magnitude spectrum for the low frequency band (used to compute flux).
     private var lowFrequencyPreviousSpectrum: [Float]
+
+    /// Previous frame's magnitude spectrum for the mid frequency band (used to compute flux).
     private var midFrequencyPreviousSpectrum: [Float]
+
+    /// Previous frame's magnitude spectrum for the high frequency band (used to compute flux).
     private var highFrequencyPreviousSpectrum: [Float]
+
+    /// Current frame's magnitude spectrum for the low frequency band.
     private var lowFrequencySpectrum: [Float]
+
+    /// Current frame's magnitude spectrum for the mid frequency band.
     private var midFrequencySpectrum: [Float]
+
+    /// Current frame's magnitude spectrum for the high frequency band.
     private var highFrequencySpectrum: [Float]
 
-    // finish() scratch
+    /// Scratch buffer for the weighted sum of per-band autocorrelation results.
     private var autocorrelationBuffer: [Float] = []
+
+    /// Temporary buffer used internally by the autocorrelation engine.
     private var autocorrelationScratch: [Float] = []
+
+    /// Scratch buffer for comb filter scoring of tempo candidates.
     private var combFilterBuffer: [Float] = []
+
+    /// Scratch buffer for harmonic template matching scores at each candidate lag.
     private var templateScores: [Float] = []
 
     public init(sampleRate: Float, options: Options = Options()) {
@@ -109,7 +165,7 @@ public final class BpmDetection {
         let lfBinMax = 6
 
         blockSize = Int((inputSampleRate * Float(lfBinMax)) / lfMax)
-        stepSize = max(1, blockSize / 4)
+        stepSize = max(1, blockSize / options.quality.rawValue)
 
         lowFrequencyFilterbank = FourierFilterbank(
             n: blockSize, fs: inputSampleRate, minFreq: lfMin, maxFreq: lfMax, windowed: true
@@ -146,7 +202,7 @@ public final class BpmDetection {
     @inline(__always)
     private func positiveSpectralFlux(_ current: [Float], _ previous: [Float]) -> Float {
         // Compressed positive flux is more onset-focused and less noisy than raw power diff.
-        let compression = max(0.0001, options.fluxCompression)
+        let compression = max(0.0001, fluxCompression)
         var total: Float = 0
         for i in 0 ..< current.count {
             let c = log1p(current[i] * compression)
@@ -355,28 +411,28 @@ public final class BpmDetection {
             input: normalisedLowFlux, lagCount: acfLength, output: &autocorrelationScratch
         )
         for i in 0 ..< acfLength {
-            autocorrelationBuffer[i] += autocorrelationScratch[i] * options.lowFrequencyWeight
+            autocorrelationBuffer[i] += autocorrelationScratch[i] * lowFrequencyWeight
         }
 
         autocorrelation.acfUnityNormalised(
             input: normalisedMidFlux, lagCount: acfLength, output: &autocorrelationScratch
         )
         for i in 0 ..< acfLength {
-            autocorrelationBuffer[i] += autocorrelationScratch[i] * options.midFrequencyWeight
+            autocorrelationBuffer[i] += autocorrelationScratch[i] * midFrequencyWeight
         }
 
         autocorrelation.acfUnityNormalised(
             input: normalisedHighFlux, lagCount: acfLength, output: &autocorrelationScratch
         )
         for i in 0 ..< acfLength {
-            autocorrelationBuffer[i] += autocorrelationScratch[i] * options.highFrequencyWeight
+            autocorrelationBuffer[i] += autocorrelationScratch[i] * highFrequencyWeight
         }
 
         autocorrelation.acfUnityNormalised(
             input: blockRmsEnvelope, lagCount: acfLength, output: &autocorrelationScratch
         )
         for i in 0 ..< acfLength {
-            autocorrelationBuffer[i] += autocorrelationScratch[i] * options.rmsWeight
+            autocorrelationBuffer[i] += autocorrelationScratch[i] * rmsWeight
         }
 
         let minLag = AutocorrelationFFT.bpmToLag(maxBPM, hopsPerSec: hopsPerSec)
@@ -411,7 +467,7 @@ public final class BpmDetection {
             }
         }
 
-        let templateMix = max(0.0, min(1.0, options.templateBlend))
+        let templateMix = max(0.0, min(1.0, templateBlend))
         for i in 0 ..< combFilterLength {
             let templateScore = harmonicTemplateScore(
                 index: i,
@@ -484,15 +540,15 @@ public final class BpmDetection {
         }
 
         // Reward consistency at integer multiples of the same period (slower tempos / longer lags).
-        var score = atLag(lag) * options.harmonicWeight1
-        score += atLag(lag * 2) * options.harmonicWeight2
-        score += atLag(lag * 3) * options.harmonicWeight3
-        score += atLag(lag * 4) * options.harmonicWeight4
+        var score = atLag(lag) * harmonicWeight1
+        score += atLag(lag * 2) * harmonicWeight2
+        score += atLag(lag * 3) * harmonicWeight3
+        score += atLag(lag * 4) * harmonicWeight4
 
         // Penalize candidates whose faster harmonics (shorter lags) are strong,
         // reducing over-fast octave errors (e.g. picking 120 instead of 60).
-        score -= atLag(max(1, lag / 2)) * options.harmonicPenalty2
-        score -= atLag(max(1, lag / 3)) * options.harmonicPenalty3
+        score -= atLag(max(1, lag / 2)) * harmonicPenalty2
+        score -= atLag(max(1, lag / 3)) * harmonicPenalty3
 
         return max(0, score)
     }

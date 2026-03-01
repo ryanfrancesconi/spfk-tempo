@@ -99,7 +99,11 @@ public actor BpmAnalysis_C: Sendable {
             )
 
         case .complete:
-            break
+            // Final estimation with all accumulated data
+            let value = Double(bpmDetect.getBpm()).rounded(.toNearestOrAwayFromZero)
+            if let bpm = Bpm(value) {
+                _ = results.append(bpm)
+            }
         }
     }
 }

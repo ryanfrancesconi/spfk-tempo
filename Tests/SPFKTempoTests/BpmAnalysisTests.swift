@@ -25,19 +25,19 @@ class BpmAnalysisTests: TestCaseModel {
 
     @Test func tabla_109() async throws {
         let url = TestBundleResources.shared.tabla_wav
-        let bpm = try await BpmAnalysis(url: url).process()
+        let bpm = try await BpmAnalysis(url: url, options: .init(quality: .accurate)).process()
         #expect(bpm.isMultiple(of: 109, tolerance: bpmTolerance))
     }
 
     @Test func drumloop_200() async throws {
         let url = URL(fileURLWithPath: "/Users/rf/Downloads/TestResources/bpm/200_drumloop.m4a")
-        let bpm = try await BpmAnalysis(url: url).process()
+        let bpm = try await BpmAnalysis(url: url, options: .init(quality: .accurate)).process()
         #expect(bpm.isMultiple(of: 200, tolerance: bpmTolerance))
     }
 
     @Test func drumloop_75() async throws {
         let url = URL(fileURLWithPath: "/Users/rf/Downloads/TestResources/bpm/75_wurli.m4a")
-        let bpm = try await BpmAnalysis(url: url).process()
+        let bpm = try await BpmAnalysis(url: url, options: .init(quality: .accurate)).process()
         #expect(bpm.isMultiple(of: 75, tolerance: bpmTolerance))
     }
 
@@ -47,7 +47,7 @@ class BpmAnalysisTests: TestCaseModel {
             "/Users/rf/Music/Music/Media.localized/Music/Aphex Twin/Drukqs Disc 01/07 Drukqs - Disk 01 - bbydhyonchord.mp3"
         )
 
-        let ba = try BpmAnalysis(url: url, matchesRequired: 3) { event in
+        let ba = try BpmAnalysis(url: url, matchesRequired: 3, options: .init(quality: .fast)) { event in
             Log.debug(event.progress)
         }
 

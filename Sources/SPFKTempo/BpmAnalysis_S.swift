@@ -23,6 +23,7 @@ public actor BpmAnalysis_S: Sendable {
         bufferDuration: TimeInterval = 1,
         matchesRequired: Int? = nil,
         tolerance: Double = 0,
+        options: BpmDetection.Options = .init(quality: .balanced),
         eventHandler: URLProgressEventHandler? = nil
     ) throws {
         let audioFile = try AVAudioFile(forReading: url)
@@ -32,6 +33,7 @@ public actor BpmAnalysis_S: Sendable {
             bufferDuration: bufferDuration,
             matchesRequired: matchesRequired,
             tolerance: tolerance,
+            options: options,
             eventHandler: eventHandler
         )
     }
@@ -41,6 +43,7 @@ public actor BpmAnalysis_S: Sendable {
         bufferDuration: TimeInterval = 1,
         matchesRequired: Int? = nil,
         tolerance: Double = 0,
+        options: BpmDetection.Options = .init(),
         eventHandler: URLProgressEventHandler? = nil
     ) {
         self.bufferDuration = max(0.1, bufferDuration)
@@ -55,7 +58,10 @@ public actor BpmAnalysis_S: Sendable {
             results = CountableResult(matchesRequired: matchesRequired)
         }
 
-        bpmDetection = BpmDetection(sampleRate: audioFile.processingFormat.sampleRate.float)
+        bpmDetection = BpmDetection(
+            sampleRate: audioFile.processingFormat.sampleRate.float,
+            options: options
+        )
     }
 
     public func process() async throws -> Bpm {
@@ -100,7 +106,11 @@ public actor BpmAnalysis_S: Sendable {
             bpmDetection.process(samples.pointee, Int(length))
 
         case .complete:
-            break
+            // Final estimation with all accumulated data
+            let value = bpmDetection.estimateTempo().rounded(.toNearestOrAwayFromZero)
+            if let bpm = Bpm(value) {
+                _ = results.append(bpm)
+            }
         }
     }
 }

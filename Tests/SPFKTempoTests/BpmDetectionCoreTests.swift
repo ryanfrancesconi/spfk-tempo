@@ -9,10 +9,54 @@ struct BpmDetectionCoreTests {
     func optionsDefaults() {
         let options = BpmDetection.Options()
 
+        #expect(options.quality == .balanced)
         #expect(options.bpmRange == 40 ... 300)
         #expect(options.beatsPerBar == 4)
         #expect(options.perceptualWeightingAmount == 0.0)
-        #expect(options.templateBlend == 0.35)
+    }
+
+    @Test("Quality levels produce consistent results on synthetic click track")
+    func qualityLevelsProduceConsistentResults() {
+        let sampleRate: Float = 48_000
+        let sourceBpm = 120.0
+        let samples = Self.makeClickTrack(bpm: sourceBpm, sampleRate: Double(sampleRate), durationSeconds: 30)
+
+        var tempoByQuality: [BpmDetection.AnalysisQuality: Double] = [:]
+
+        for quality in [BpmDetection.AnalysisQuality.fast, .balanced, .accurate] {
+            let options = BpmDetection.Options(quality: quality)
+            let detector = BpmDetection(sampleRate: sampleRate, options: options)
+            let tempo = detector.estimateTempoOfSamples(samples)
+            tempoByQuality[quality] = tempo
+        }
+
+        // All quality levels should detect a tempo in the correct family
+        for (quality, tempo) in tempoByQuality {
+            let error = Self.bestFamilyError(observedBpm: tempo, sourceBpm: sourceBpm)
+            #expect(error <= 2.0, "Quality \(quality) detected \(tempo), expected near \(sourceBpm)")
+        }
+    }
+
+    @Test("Custom Options are stored correctly")
+    func customOptionsAreStoredCorrectly() {
+        let options = BpmDetection.Options(
+            quality: .accurate,
+            bpmRange: 60 ... 200,
+            beatsPerBar: 3,
+            perceptualWeightingAmount: 0.5
+        )
+
+        #expect(options.quality == .accurate)
+        #expect(options.bpmRange == 60 ... 200)
+        #expect(options.beatsPerBar == 3)
+        #expect(options.perceptualWeightingAmount == 0.5)
+    }
+
+    @Test("AnalysisQuality raw values match expected step divisors")
+    func analysisQualityRawValues() {
+        #expect(BpmDetection.AnalysisQuality.fast.rawValue == 1)
+        #expect(BpmDetection.AnalysisQuality.balanced.rawValue == 2)
+        #expect(BpmDetection.AnalysisQuality.accurate.rawValue == 4)
     }
 
     @Test("Batch array and pointer APIs agree")
