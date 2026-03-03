@@ -12,7 +12,6 @@ public actor BpmAnalysis_S: Sendable {
     private let bufferDuration: TimeInterval
     private let eventHandler: URLProgressEventHandler?
     private var bpmDetection: BpmDetection
-
     private let audioFile: AVAudioFile
     private var results: CountableResult<Bpm>
 
