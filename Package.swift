@@ -33,6 +33,5 @@ let package = Package(
                 .product(name: "SPFKTesting", package: "spfk-testing"),
             ]
         ),
-    ],
-    cxxLanguageStandard: .cxx20
+    ]
 )
