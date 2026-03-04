@@ -10,11 +10,11 @@ let package = Package(
     products: [
         .library(
             name: "SPFKTempo",
-            targets: ["SPFKTempo", "SPFKTempoC"]
+            targets: ["SPFKTempo"]
         )
     ],
     dependencies: [
-        .package(url: "https://github.com/ryanfrancesconi/CXXSoundTouch", from: "2.1.2"),
+        .package(url: "https://github.com/ryanfrancesconi/spfk-audio-base", from: "0.0.5"),
         .package(url: "https://github.com/ryanfrancesconi/spfk-utils", from: "0.0.3"),
         .package(url: "https://github.com/ryanfrancesconi/spfk-testing", from: "0.0.1"),
     ],
@@ -22,32 +22,16 @@ let package = Package(
         .target(
             name: "SPFKTempo",
             dependencies: [
-                .targetItem(name: "SPFKTempoC", condition: nil),
+                .product(name: "SPFKAudioBase", package: "spfk-audio-base"),
                 .product(name: "SPFKUtils", package: "spfk-utils"),
-
-            ]
-        ),
-        .target(
-            name: "SPFKTempoC",
-            dependencies: [
-                .product(name: "SoundTouch", package: "CXXSoundTouch")
-            ],
-            publicHeadersPath: "include",
-            cSettings: [
-                .headerSearchPath("include_private")
-            ],
-            cxxSettings: [
-                .headerSearchPath("include_private")
             ]
         ),
         .testTarget(
             name: "SPFKTempoTests",
             dependencies: [
                 .targetItem(name: "SPFKTempo", condition: nil),
-                .targetItem(name: "SPFKTempoC", condition: nil),
                 .product(name: "SPFKTesting", package: "spfk-testing"),
             ]
         ),
-    ],
-    cxxLanguageStandard: .cxx20
+    ]
 )
