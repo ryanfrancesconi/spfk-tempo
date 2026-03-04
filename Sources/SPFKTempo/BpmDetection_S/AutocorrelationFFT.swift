@@ -1,3 +1,5 @@
+// Copyright Ryan Francesconi. All Rights Reserved. Revision History at https://github.com/ryanfrancesconi/spfk-tempo
+
 import Accelerate
 import Foundation
 
@@ -18,7 +20,9 @@ final class AutocorrelationFFT {
     @inline(__always)
     private func nextPowerOfTwo(_ value: Int) -> Int {
         var powerOfTwo = 1
-        while powerOfTwo < value { powerOfTwo <<= 1 }
+        while powerOfTwo < value {
+            powerOfTwo <<= 1
+        }
         return powerOfTwo
     }
 
@@ -54,7 +58,9 @@ final class AutocorrelationFFT {
                 }
 
                 // Input signal padded to FFT length.
-                for sampleIndex in 0 ..< inputCount { realPointer[sampleIndex] = input[sampleIndex] }
+                for sampleIndex in 0 ..< inputCount {
+                    realPointer[sampleIndex] = input[sampleIndex]
+                }
                 if inputCount < fftLength {
                     realPointer.advanced(by: inputCount).update(repeating: 0, count: fftLength - inputCount)
                 }

@@ -1,3 +1,5 @@
+// Copyright Ryan Francesconi. All Rights Reserved. Revision History at https://github.com/ryanfrancesconi/spfk-tempo
+
 import Accelerate
 import Foundation
 
@@ -12,11 +14,11 @@ final class FourierFilterbank {
     private var imaginaryProjectionScratch: [Float]
 
     init(n: Int, fs: Float, minFreq: Float, maxFreq: Float, windowed: Bool) {
-        self.frameSize = n
+        frameSize = n
 
         let minimumBin = Int(floor((Float(n) * minFreq) / fs))
         let maximumBin = Int(ceil((Float(n) * maxFreq) / fs))
-        self.outputBinCount = maximumBin - minimumBin + 1
+        outputBinCount = maximumBin - minimumBin + 1
 
         var sineTable = Array(repeating: Float(0), count: outputBinCount * n)
         var cosineTable = Array(repeating: Float(0), count: outputBinCount * n)
@@ -37,8 +39,8 @@ final class FourierFilterbank {
 
         self.sineTable = sineTable
         self.cosineTable = cosineTable
-        self.realProjectionScratch = Array(repeating: 0, count: outputBinCount)
-        self.imaginaryProjectionScratch = Array(repeating: 0, count: outputBinCount)
+        realProjectionScratch = Array(repeating: 0, count: outputBinCount)
+        imaginaryProjectionScratch = Array(repeating: 0, count: outputBinCount)
     }
 
     func forwardMagnitude(input: UnsafeBufferPointer<Float>, output: UnsafeMutableBufferPointer<Float>) {

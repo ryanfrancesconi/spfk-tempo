@@ -1,3 +1,5 @@
+// Copyright Ryan Francesconi. All Rights Reserved. Revision History at https://github.com/ryanfrancesconi/spfk-tempo
+
 import Foundation
 
 final class ACFCombFilter {
@@ -90,11 +92,11 @@ final class ACFCombFilter {
 
             if peak > 0 {
                 var interpolatedPeakIndex = Float(peakIndex)
-                if peakIndex > 0 && peakIndex + 1 < autocorrelationLength {
+                if peakIndex > 0, peakIndex + 1 < autocorrelationLength {
                     let leftValue = autocorrelation[peakIndex - 1]
                     let centerValue = autocorrelation[peakIndex]
                     let rightValue = autocorrelation[peakIndex + 1]
-                    if centerValue > leftValue && centerValue > rightValue {
+                    if centerValue > leftValue, centerValue > rightValue {
                         let denominator = leftValue - 2 * centerValue + rightValue
                         if denominator != 0 {
                             interpolatedPeakIndex += ((leftValue - rightValue) / denominator) / 2
@@ -133,11 +135,10 @@ final class ACFCombFilter {
             totalWeight += weightedPeak
         }
 
-        let refinedLag: Float
-        if totalWeight > 0 {
-            refinedLag = weightedLag / totalWeight
+        let refinedLag: Float = if totalWeight > 0 {
+            weightedLag / totalWeight
         } else {
-            refinedLag = seedLag
+            seedLag
         }
 
         return AutocorrelationFFT.lagToBpm(refinedLag, hopsPerSec: hopsPerSec)

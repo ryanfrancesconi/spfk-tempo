@@ -4,13 +4,11 @@ import AVFoundation
 import Foundation
 import SPFKAudioBase
 import SPFKBase
-@preconcurrency import SPFKTempoC
 
-public actor BpmAnalysis_C: Sendable {
+public actor BpmAnalysis: Sendable {
     private let bufferDuration: TimeInterval
     private let eventHandler: URLProgressEventHandler?
-    private let bpmDetect: DetectTempo
-
+    private var bpmDetection: BpmDetection
     private let audioFile: AVAudioFile
     private var results: CountableResult<Bpm>
 
@@ -21,6 +19,7 @@ public actor BpmAnalysis_C: Sendable {
         bufferDuration: TimeInterval = 1,
         matchesRequired: Int? = nil,
         tolerance: Double = 0,
+        options: BpmDetection.Options = .init(quality: .balanced),
         eventHandler: URLProgressEventHandler? = nil
     ) throws {
         let audioFile = try AVAudioFile(forReading: url)
@@ -30,6 +29,7 @@ public actor BpmAnalysis_C: Sendable {
             bufferDuration: bufferDuration,
             matchesRequired: matchesRequired,
             tolerance: tolerance,
+            options: options,
             eventHandler: eventHandler
         )
     }
@@ -39,6 +39,7 @@ public actor BpmAnalysis_C: Sendable {
         bufferDuration: TimeInterval = 1,
         matchesRequired: Int? = nil,
         tolerance: Double = 0,
+        options: BpmDetection.Options = .init(),
         eventHandler: URLProgressEventHandler? = nil
     ) {
         self.bufferDuration = max(0.1, bufferDuration)
@@ -53,7 +54,10 @@ public actor BpmAnalysis_C: Sendable {
             results = CountableResult(matchesRequired: matchesRequired)
         }
 
-        bpmDetect = DetectTempo(format: audioFile.processingFormat)
+        bpmDetection = BpmDetection(
+            sampleRate: audioFile.processingFormat.sampleRate.float,
+            options: options
+        )
     }
 
     public func process() async throws -> Bpm {
@@ -86,21 +90,20 @@ public actor BpmAnalysis_C: Sendable {
             await eventHandler?(.progress(url: url, value: value))
 
         case .periodicProgress:
-            let value = Double(bpmDetect.getBpm()).rounded(.toNearestOrAwayFromZero)
+            let value = bpmDetection.estimateTempo().rounded(.toNearestOrAwayFromZero)
 
-            if let bpm = Bpm(value), results.append(bpm) { // true and it thinks it has a solid Bpm, so cancel the task
+            if let bpm = Bpm(value),
+               results.append(bpm)
+            { // true and it thinks it has a solid Bpm, so cancel the task
                 processTask?.cancel()
             }
 
         case .data(format: _, length: let length, samples: let samples):
-            bpmDetect.process(
-                samples.pointee,
-                numberOfSamples: Int32(length)
-            )
+            bpmDetection.process(samples.pointee, Int(length))
 
         case .complete:
             // Final estimation with all accumulated data
-            let value = Double(bpmDetect.getBpm()).rounded(.toNearestOrAwayFromZero)
+            let value = bpmDetection.estimateTempo().rounded(.toNearestOrAwayFromZero)
             if let bpm = Bpm(value) {
                 _ = results.append(bpm)
             }
