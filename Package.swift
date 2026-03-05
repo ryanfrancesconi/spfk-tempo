@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "spfk-tempo",
     defaultLocalization: "en",
-    platforms: [.macOS(.v12), .iOS(.v15)],
+    platforms: [.macOS(.v13), .iOS(.v16)],
     products: [
         .library(
             name: "SPFKTempo",
