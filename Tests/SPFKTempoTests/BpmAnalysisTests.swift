@@ -17,8 +17,10 @@ class BpmAnalysisTests: TestCaseModel {
         #expect(bpm.isMultiple(of: 60, tolerance: bpmTolerance))
     }
 
-    @Test func drumloop_110() async throws {
+    @Test(.tags(.development)) func drumloop_110() async throws {
         let url = URL(fileURLWithPath: "/Users/rf/Downloads/TestResources/bpm/110_drumloop.m4a")
+        guard url.exists else { return }
+
         let bpm = try await BpmAnalysis(url: url).process()
         #expect(bpm.isMultiple(of: 110, tolerance: bpmTolerance))
     }
@@ -29,23 +31,30 @@ class BpmAnalysisTests: TestCaseModel {
         #expect(bpm.isMultiple(of: 109, tolerance: bpmTolerance))
     }
 
-    @Test func drumloop_200() async throws {
+    @Test(.tags(.development)) func drumloop_200() async throws {
         let url = URL(fileURLWithPath: "/Users/rf/Downloads/TestResources/bpm/200_drumloop.m4a")
+        guard url.exists else { return }
+
         let bpm = try await BpmAnalysis(url: url, options: .init(quality: .accurate)).process()
         #expect(bpm.isMultiple(of: 200, tolerance: bpmTolerance))
     }
 
-    @Test func drumloop_75() async throws {
+    @Test(.tags(.development)) func drumloop_75() async throws {
         let url = URL(fileURLWithPath: "/Users/rf/Downloads/TestResources/bpm/75_wurli.m4a")
+
+        guard url.exists else { return }
+
         let bpm = try await BpmAnalysis(url: url, options: .init(quality: .accurate)).process()
         #expect(bpm.isMultiple(of: 75, tolerance: bpmTolerance))
     }
 
-    @Test func longSong() async throws {
+    @Test(.tags(.development)) func longSong() async throws {
         let url = URL(
             fileURLWithPath:
             "/Users/rf/Music/Music/Media.localized/Music/Aphex Twin/Drukqs Disc 01/07 Drukqs - Disk 01 - bbydhyonchord.mp3"
         )
+        
+        guard url.exists else { return }
 
         let ba = try BpmAnalysis(url: url, matchesRequired: 3, options: .init(quality: .fast)) { event in
             Log.debug(event.progress)
@@ -55,11 +64,13 @@ class BpmAnalysisTests: TestCaseModel {
         #expect(bpm.isMultiple(of: 122, tolerance: bpmTolerance))
     }
 
-    @Test func cancelTask() async throws {
+    @Test(.tags(.development)) func cancelTask() async throws {
         let url = URL(
             fileURLWithPath:
             "/Users/rf/Music/Music/Media.localized/Music/Aphex Twin/Drukqs Disc 01/07 Drukqs - Disk 01 - bbydhyonchord.mp3"
         )
+        
+        guard url.exists else { return }
 
         let task = Task<Bpm, Error>(priority: .high) {
             try await BpmAnalysis(url: url, matchesRequired: 5).process()
