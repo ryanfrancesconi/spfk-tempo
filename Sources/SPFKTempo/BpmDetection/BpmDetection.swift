@@ -2,6 +2,19 @@
 
 import Foundation
 
+/// Core BPM detection engine using multi-band spectral flux and autocorrelation.
+///
+/// Decomposes mono audio into three frequency bands (low, mid, high), computes
+/// onset strength via positive spectral flux, then runs FFT-based autocorrelation
+/// and comb-filter scoring to identify the dominant periodicity. A harmonic
+/// template matcher reduces octave errors (e.g. 120 vs 60 BPM).
+///
+/// Supports both batch and streaming usage:
+/// - **Batch**: Call ``estimateTempoOfSamples(_:_:)-1yn1l`` with a complete audio buffer.
+/// - **Streaming**: Feed chunks via ``process(_:_:)-85q2c``, then call ``estimateTempo()``
+///   when ready for a result.
+///
+/// For file-level analysis with consensus voting and early exit, use ``BpmAnalysis`` instead.
 public final class BpmDetection {
     /// Controls the tradeoff between detection speed and accuracy.
     /// Higher quality uses more overlapping analysis windows for finer onset resolution.
@@ -14,14 +27,29 @@ public final class BpmDetection {
         case accurate = 4
     }
 
+    /// Configuration for the BPM detection algorithm.
     public struct Options {
+        /// The analysis quality level, controlling the overlap between FFT windows.
         public var quality: AnalysisQuality
+
+        /// The range of BPM values to consider. Candidates outside this range are discarded.
         public var bpmRange: ClosedRange<Float>
+
+        /// Number of beats per bar, used for comb-filter periodicity scoring.
         public var beatsPerBar: Int
-        /// 0.0 = no perceptual tempo bias (most neutral/accurate),
-        /// 1.0 = full legacy weighting toward mid-tempo.
+
+        /// Perceptual weighting amount that biases results toward mid-tempo ranges.
+        /// 0.0 = no bias (most neutral/accurate),
+        /// 1.0 = full legacy weighting toward ~130 BPM.
         public var perceptualWeightingAmount: Float
 
+        /// Creates detection options.
+        ///
+        /// - Parameters:
+        ///   - quality: Analysis quality level. Defaults to `.balanced`.
+        ///   - bpmRange: Valid BPM range. Defaults to 40–300.
+        ///   - beatsPerBar: Beats per bar for comb filtering. Defaults to 4.
+        ///   - perceptualWeightingAmount: Mid-tempo bias strength (0.0–1.0). Defaults to 0.0.
         public init(
             quality: AnalysisQuality = .balanced,
             bpmRange: ClosedRange<Float> = 40 ... 300,
@@ -73,6 +101,7 @@ public final class BpmDetection {
     /// Provides a coarse overall loudness signal.
     private let rmsWeight: Float = 0.1
 
+    /// The current detection options. Can be modified between calls.
     public var options: Options
 
     /// The sample rate of the input audio signal in Hz.
@@ -154,6 +183,11 @@ public final class BpmDetection {
     /// Scratch buffer for harmonic template matching scores at each candidate lag.
     private var templateScores: [Float] = []
 
+    /// Creates a BPM detection engine for audio at the given sample rate.
+    ///
+    /// - Parameters:
+    ///   - sampleRate: The sample rate of the input audio in Hz.
+    ///   - options: Detection algorithm options.
     public init(sampleRate: Float, options: Options = Options()) {
         self.options = options
         inputSampleRate = sampleRate
@@ -247,24 +281,55 @@ public final class BpmDetection {
         highFrequencyPreviousSpectrum = highFrequencySpectrum
     }
 
+    /// Processes a buffer of audio samples and returns the estimated tempo.
+    ///
+    /// This is a batch convenience method — it processes all samples at once and
+    /// returns the result. For streaming usage, call ``process(_:_:)-85q2c`` followed
+    /// by ``estimateTempo()`` separately.
+    ///
+    /// - Parameters:
+    ///   - samples: Pointer to mono Float32 audio samples.
+    ///   - nsamples: Number of samples in the buffer.
+    /// - Returns: The estimated tempo in BPM, or 0 if detection failed.
     public func estimateTempoOfSamples(_ samples: UnsafePointer<Float>, _ nsamples: Int) -> Double {
         let buf = UnsafeBufferPointer(start: samples, count: nsamples)
         return estimateTempoOfSamples(buf)
     }
 
+    /// Feeds audio samples into the detection engine for later tempo estimation.
+    ///
+    /// Call this repeatedly with sequential audio chunks, then call ``estimateTempo()``
+    /// to retrieve the result. Handles partial blocks internally.
+    ///
+    /// - Parameters:
+    ///   - samples: Pointer to mono Float32 audio samples.
+    ///   - nsamples: Number of samples in the buffer.
     public func process(_ samples: UnsafePointer<Float>, _ nsamples: Int) {
         let buf = UnsafeBufferPointer(start: samples, count: nsamples)
         process(buf)
     }
 
+    /// Processes a buffer of audio samples and returns the estimated tempo.
+    ///
+    /// Array convenience overload of ``estimateTempoOfSamples(_:_:)-1yn1l``.
     public func estimateTempoOfSamples(_ samples: [Float]) -> Double {
         samples.withUnsafeBufferPointer { estimateTempoOfSamples($0) }
     }
 
+    /// Feeds audio samples into the detection engine for later tempo estimation.
+    ///
+    /// Array convenience overload of ``process(_:_:)-85q2c``.
     public func process(_ samples: [Float]) {
         samples.withUnsafeBufferPointer { process($0) }
     }
 
+    /// Returns the estimated tempo from all audio processed so far.
+    ///
+    /// Flushes any buffered partial block, then runs the full autocorrelation,
+    /// comb-filter, and harmonic-template scoring pipeline. The top candidate
+    /// BPM values are available via ``getTempoCandidates()`` after this call.
+    ///
+    /// - Returns: The estimated tempo in BPM, or 0 if detection failed.
     public func estimateTempo() -> Double {
         if pendingStepFillCount > 0 {
             let hole = blockSize - stepSize
@@ -280,10 +345,18 @@ public final class BpmDetection {
         return finish()
     }
 
+    /// Returns the ranked BPM candidates from the most recent ``estimateTempo()`` call.
+    ///
+    /// The first element is the top candidate (same value returned by `estimateTempo()`).
+    /// Subsequent entries are alternative candidates in descending score order.
     public func getTempoCandidates() -> [Double] {
         tempoCandidates
     }
 
+    /// Clears all accumulated onset data, tempo candidates, and internal buffers.
+    ///
+    /// Call this to reuse the engine for a different audio signal without
+    /// reallocating the DSP resources.
     public func reset() {
         lowFrequencyFlux.removeAll(keepingCapacity: true)
         midFrequencyFlux.removeAll(keepingCapacity: true)
