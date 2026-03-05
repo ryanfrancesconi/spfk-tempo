@@ -15,7 +15,6 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/ryanfrancesconi/spfk-audio-base", from: "0.0.5"),
-        .package(url: "https://github.com/ryanfrancesconi/spfk-utils", from: "0.0.3"),
         .package(url: "https://github.com/ryanfrancesconi/spfk-testing", from: "0.0.1"),
     ],
     targets: [
@@ -23,7 +22,6 @@ let package = Package(
             name: "SPFKTempo",
             dependencies: [
                 .product(name: "SPFKAudioBase", package: "spfk-audio-base"),
-                .product(name: "SPFKUtils", package: "spfk-utils"),
             ]
         ),
         .testTarget(
