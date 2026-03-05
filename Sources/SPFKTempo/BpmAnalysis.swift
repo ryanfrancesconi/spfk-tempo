@@ -146,10 +146,14 @@ public actor BpmAnalysis: Sendable {
         case .periodicProgress:
             let value = bpmDetection.estimateTempo().rounded(.toNearestOrAwayFromZero)
 
+            Log.debug("periodicProgress", value)
+
             if let bpm = Bpm(value),
                results.append(bpm)
             { // true and it thinks it has a solid Bpm, so cancel the task
                 processTask?.cancel()
+
+                Log.debug("periodicProgress met matches required:", value)
             }
 
         case .data(format: _, length: let length, samples: let samples):
