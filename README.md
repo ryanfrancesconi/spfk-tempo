@@ -1,5 +1,6 @@
 # SPFKTempo
-[![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fryanfrancesconi%2Fspfk-tempo%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/ryanfrancesconi/spfk-tempo)[![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fryanfrancesconi%2Fspfk-tempo%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/ryanfrancesconi/spfk-tempo)
+[![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fryanfrancesconi%2Fspfk-tempo%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/ryanfrancesconi/spfk-tempo)
+[![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fryanfrancesconi%2Fspfk-tempo%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/ryanfrancesconi/spfk-tempo)
 
 Pure Swift BPM detection library using multi-band spectral flux analysis, FFT-based autocorrelation, and harmonic template matching. Processes audio files via AVFoundation with early-exit support for streaming detection.
 
@@ -124,8 +125,7 @@ let candidates = detector.getTempoCandidates()
 
 ## Dependencies
 
-- **SPFKAudioBase** - Audio type definitions (`Bpm`, `AudioFileScanner`)
-- **SPFKUtils** - General utilities (`CountableResult`)
+- **SPFKAudioBase** - Audio type definitions and utilities (`Bpm`, `AudioFileScanner`, `CountableResult`)
 
 ## Requirements
 
