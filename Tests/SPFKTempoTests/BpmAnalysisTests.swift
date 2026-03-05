@@ -78,6 +78,15 @@ class BpmAnalysisTests: TestCaseModel {
         #expect(bpm.isMultiple(of: 122, tolerance: bpmTolerance))
     }
 
+    /// Tabla is ~4.39s, well under the 7.5s looping threshold (minimumDuration=15).
+    /// This verifies that AudioFileScanner's in-memory looping produces enough
+    /// material for BPM detection without creating temp files on disk.
+    @Test func shortFile_tabla() async throws {
+        let url = TestBundleResources.shared.tabla_wav
+        let bpm = try await BpmAnalysis(url: url, minimumDuration: 15).process()
+        #expect(bpm.isMultiple(of: 109, tolerance: bpmTolerance))
+    }
+
     @Test func mostLikely() async throws {
         let list: CountableResult<Bpm> = [
             Bpm(1)!,
