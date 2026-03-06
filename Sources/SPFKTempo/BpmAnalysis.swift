@@ -110,7 +110,17 @@ public actor BpmAnalysis: Sendable {
             )
         }
 
-        _ = await processTask?.result
+        // Bridge cancellation from the calling structured context into the
+        // unstructured processTask. Without this, cancelling the parent task
+        // (e.g. via a task group) won't reach AudioFileScanner's loop.
+        // Capture the task locally so the @Sendable onCancel closure doesn't
+        // need actor-isolated access.
+        let task = processTask
+        _ = await withTaskCancellationHandler {
+            await task?.result
+        } onCancel: {
+            task?.cancel()
+        }
 
         guard let bpm = results.choose() else {
             throw NSError(description: "Failed to detect bpm")
