@@ -12,7 +12,8 @@ class BpmAnalysisFileTests: TestCaseModel {
     private let bpmTolerance: Double = 2
 
     @Test func drumloop_60() async throws {
-        let url = TestBundleResources.shared.counting_123456789_60BPM_48k
+        let url = TestBundleResources.shared.counting_123456789bpm60_48k
+        assert(url.exists)
         let bpm = try await BpmAnalysis(url: url).process()
         #expect(bpm?.isMultiple(of: 60, tolerance: bpmTolerance) == true)
     }
