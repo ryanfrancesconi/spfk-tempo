@@ -174,8 +174,8 @@ Any audio format readable by Core Audio's `AVAudioFile`, including WAV, AIF, FLA
 
 ## Requirements
 
-- macOS 12+ / iOS 15+
-- Swift 6.2+
+- **Platforms:** macOS 13+, iOS 16+
+- **Swift:** 6.2+
 
 ## About
 
