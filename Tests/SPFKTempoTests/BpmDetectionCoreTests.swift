@@ -7,24 +7,25 @@ import Testing
 struct BpmDetectionCoreTests {
     @Test("Options defaults are sane")
     func optionsDefaults() {
-        let options = BpmDetection.Options()
+        let options = BpmDetectionOptions()
 
         #expect(options.quality == .balanced)
         #expect(options.bpmRange == 40 ... 300)
         #expect(options.beatsPerBar == 4)
         #expect(options.perceptualWeightingAmount == 0.0)
+        #expect(options.confidenceLevel == .moderate)
     }
 
     @Test("Quality levels produce consistent results on synthetic click track")
     func qualityLevelsProduceConsistentResults() {
-        let sampleRate: Float = 48_000
+        let sampleRate: Float = 48000
         let sourceBpm = 120.0
         let samples = Self.makeClickTrack(bpm: sourceBpm, sampleRate: Double(sampleRate), durationSeconds: 30)
 
-        var tempoByQuality: [BpmDetection.AnalysisQuality: Double] = [:]
+        var tempoByQuality: [AnalysisQuality: Double] = [:]
 
-        for quality in [BpmDetection.AnalysisQuality.fast, .balanced, .accurate] {
-            let options = BpmDetection.Options(quality: quality)
+        for quality in [AnalysisQuality.fast, .balanced, .accurate] {
+            let options = BpmDetectionOptions(quality: quality)
             let detector = BpmDetection(sampleRate: sampleRate, options: options)
             let tempo = detector.estimateTempoOfSamples(samples)
             tempoByQuality[quality] = tempo
@@ -39,7 +40,7 @@ struct BpmDetectionCoreTests {
 
     @Test("Custom Options are stored correctly")
     func customOptionsAreStoredCorrectly() {
-        let options = BpmDetection.Options(
+        let options = BpmDetectionOptions(
             quality: .accurate,
             bpmRange: 60 ... 200,
             beatsPerBar: 3,
@@ -54,18 +55,37 @@ struct BpmDetectionCoreTests {
 
     @Test("AnalysisQuality raw values match expected step divisors")
     func analysisQualityRawValues() {
-        #expect(BpmDetection.AnalysisQuality.fast.rawValue == 1)
-        #expect(BpmDetection.AnalysisQuality.balanced.rawValue == 2)
-        #expect(BpmDetection.AnalysisQuality.accurate.rawValue == 4)
+        #expect(AnalysisQuality.fast.rawValue == 1)
+        #expect(AnalysisQuality.balanced.rawValue == 2)
+        #expect(AnalysisQuality.accurate.rawValue == 4)
+    }
+
+    @Test("ConfidenceLevel thresholds are ordered")
+    func confidenceLevelThresholds() {
+        #expect(ConfidenceLevel.disabled.threshold == 0)
+        #expect(ConfidenceLevel.low.threshold < ConfidenceLevel.moderate.threshold)
+        #expect(ConfidenceLevel.moderate.threshold < ConfidenceLevel.high.threshold)
+    }
+
+    @Test("Disabled confidence level accepts noise")
+    func disabledConfidenceAcceptsNoise() {
+        let sampleRate: Float = 48000
+        let samples = Self.makeWhiteNoise(sampleRate: Double(sampleRate), durationSeconds: 30)
+
+        let options = BpmDetectionOptions(confidenceLevel: .disabled)
+        let detector = BpmDetection(sampleRate: sampleRate, options: options)
+        let tempo = detector.estimateTempoOfSamples(samples)
+
+        #expect(tempo > 0, "With confidence disabled, noise should produce some tempo value")
     }
 
     @Test("Batch array and pointer APIs agree")
     func batchArrayAndPointerApisAgree() {
-        let sampleRate: Float = 48_000
+        let sampleRate: Float = 48000
         let sourceBpm = 120.0
         let samples = Self.makeClickTrack(bpm: sourceBpm, sampleRate: Double(sampleRate), durationSeconds: 30)
 
-        let options = BpmDetection.Options(bpmRange: 40 ... 300)
+        let options = BpmDetectionOptions(bpmRange: 40 ... 300)
 
         let arrayDetector = BpmDetection(sampleRate: sampleRate, options: options)
         let arrayTempo = arrayDetector.estimateTempoOfSamples(samples)
@@ -76,7 +96,7 @@ struct BpmDetectionCoreTests {
                 return 0.0
             }
             let pointerDetector = BpmDetection(sampleRate: sampleRate, options: options)
-            return pointerDetector.estimateTempoOfSamples(baseAddress, buffer.count)
+            return pointerDetector.estimateTempoOfSamples(baseAddress, count: buffer.count)
         }
 
         #expect(abs(arrayTempo - pointerTempo) < 0.25)
@@ -84,11 +104,11 @@ struct BpmDetectionCoreTests {
 
     @Test("Streaming process and batch process are consistent")
     func streamingAndBatchProcessAreConsistent() {
-        let sampleRate: Float = 48_000
+        let sampleRate: Float = 48000
         let sourceBpm = 96.0
         let samples = Self.makeClickTrack(bpm: sourceBpm, sampleRate: Double(sampleRate), durationSeconds: 35)
 
-        let options = BpmDetection.Options(bpmRange: 40 ... 300)
+        let options = BpmDetectionOptions(bpmRange: 40 ... 300)
 
         let batchDetector = BpmDetection(sampleRate: sampleRate, options: options)
         let batchTempo = batchDetector.estimateTempoOfSamples(samples)
@@ -108,8 +128,8 @@ struct BpmDetectionCoreTests {
 
     @Test("Detected tempo is near expected family for click tracks")
     func detectedTempoNearExpectedFamily() {
-        let sampleRate: Float = 48_000
-        let options = BpmDetection.Options(bpmRange: 40 ... 300)
+        let sampleRate: Float = 48000
+        let options = BpmDetectionOptions(bpmRange: 40 ... 300)
         let sourceBpms: [Double] = [60, 90, 140]
 
         for sourceBpm in sourceBpms {
@@ -124,9 +144,9 @@ struct BpmDetectionCoreTests {
 
     @Test("BPM range constrains output")
     func bpmRangeConstrainsOutput() {
-        let sampleRate: Float = 48_000
+        let sampleRate: Float = 48000
         let sourceBpm = 60.0
-        let options = BpmDetection.Options(bpmRange: 80 ... 100)
+        let options = BpmDetectionOptions(bpmRange: 80 ... 100)
         let samples = Self.makeClickTrack(bpm: sourceBpm, sampleRate: Double(sampleRate), durationSeconds: 30)
 
         let detector = BpmDetection(sampleRate: sampleRate, options: options)
@@ -137,7 +157,7 @@ struct BpmDetectionCoreTests {
 
     @Test("reset clears tempo candidates")
     func resetClearsTempoCandidates() {
-        let sampleRate: Float = 48_000
+        let sampleRate: Float = 48000
         let sourceBpm = 120.0
         let samples = Self.makeClickTrack(bpm: sourceBpm, sampleRate: Double(sampleRate), durationSeconds: 25)
 
@@ -145,12 +165,40 @@ struct BpmDetectionCoreTests {
         detector.process(samples)
         _ = detector.estimateTempo()
 
-        #expect(!detector.getTempoCandidates().isEmpty)
+        #expect(!detector.tempoCandidates.isEmpty)
 
         detector.reset()
-        #expect(detector.getTempoCandidates().isEmpty)
+        #expect(detector.tempoCandidates.isEmpty)
     }
 
+    @Test("White noise returns zero tempo")
+    func whiteNoiseReturnsZero() {
+        let sampleRate: Float = 48000
+        let samples = Self.makeWhiteNoise(sampleRate: Double(sampleRate), durationSeconds: 30)
+
+        let detector = BpmDetection(sampleRate: sampleRate)
+        let tempo = detector.estimateTempoOfSamples(samples)
+
+        #expect(tempo == 0.0, "Non-rhythmic white noise should not produce a tempo, got \(tempo)")
+    }
+
+    @Test("DC signal returns zero tempo")
+    func dcSignalReturnsZero() {
+        let sampleRate: Float = 48000
+        let sampleCount = Int(Double(sampleRate) * 30)
+        let samples = Array(repeating: Float(0.5), count: sampleCount)
+
+        let detector = BpmDetection(sampleRate: sampleRate)
+        let tempo = detector.estimateTempoOfSamples(samples)
+
+        #expect(tempo == 0.0, "A constant DC signal should not produce a tempo, got \(tempo)")
+    }
+
+}
+
+// MARK: - Helpers
+
+extension BpmDetectionCoreTests {
     private static func makeClickTrack(
         bpm: Double,
         sampleRate: Double,
@@ -182,5 +230,26 @@ struct BpmDetectionCoreTests {
     private static func bestFamilyError(observedBpm: Double, sourceBpm: Double) -> Double {
         let family = [sourceBpm / 2.0, sourceBpm, sourceBpm * 2.0]
         return family.map { abs(observedBpm - $0) }.min() ?? .infinity
+    }
+
+    private static func makeWhiteNoise(
+        sampleRate: Double,
+        durationSeconds: Double,
+        seed: UInt64 = 42
+    ) -> [Float] {
+        let sampleCount = Int(sampleRate * durationSeconds)
+        var samples = Array(repeating: Float(0), count: sampleCount)
+
+        // Simple xorshift64 PRNG for deterministic noise
+        var state = seed
+        for i in 0 ..< sampleCount {
+            state ^= state << 13
+            state ^= state >> 7
+            state ^= state << 17
+            // Map to [-1, 1]
+            samples[i] = Float(Double(state &>> 1) / Double(UInt64.max >> 1)) * 2.0 - 1.0
+        }
+
+        return samples
     }
 }

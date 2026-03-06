@@ -23,28 +23,32 @@ Files shorter than 7.5 seconds (half the default `minimumDuration` of 15) are au
 
 ```swift
 // Explicit minimum duration — loops the file if shorter than half this value
-let bpm = try await BpmAnalysis(url: shortFileURL, minimumDuration: 20).process()
+let bpm = try await BpmAnalysis(url: shortFileURL, options: .init(minimumDuration: 20)).process()
 
 // Disable looping
-let bpm = try await BpmAnalysis(url: audioFileURL, minimumDuration: nil).process()
+let bpm = try await BpmAnalysis(url: audioFileURL, options: .init(minimumDuration: nil)).process()
 ```
 
 ### Early exit with consensus voting
 
-For long files, `matchesRequired` stops processing as soon as enough periodic estimates agree:
+By default, processing stops as soon as 3 consistent periodic estimates agree (±1 BPM).
+Override `matchesRequired` or `tolerance` for stricter or looser consensus:
 
 ```swift
-let analysis = try BpmAnalysis(
-    url: audioFileURL,
-    matchesRequired: 3,         // stop after 3 consistent estimates
+let options = BpmAnalysisOptions(
+    matchesRequired: 5,         // require more agreement before stopping
     tolerance: 2.0,             // ±2 BPM counts as a match
-    options: .init(
+    detection: .init(
         quality: .accurate,     // 75% window overlap
         bpmRange: 60 ... 200    // constrain search range
     )
 )
 
-let bpm = try await analysis.process()
+let bpm = try await BpmAnalysis(url: audioFileURL, options: options).process()
+
+// Process the entire file without early exit
+let options = BpmAnalysisOptions(matchesRequired: nil)
+let bpm = try await BpmAnalysis(url: audioFileURL, options: options).process()
 ```
 
 ### Progress reporting and cancellation
@@ -52,8 +56,7 @@ let bpm = try await analysis.process()
 ```swift
 let analysis = try BpmAnalysis(
     url: audioFileURL,
-    matchesRequired: 3,
-    options: .init(quality: .fast)
+    options: .init(detection: .init(quality: .fast))
 ) { event in
     print("Progress: \(event.progress)")
 }
@@ -80,7 +83,7 @@ for chunk in audioChunks {
 }
 
 let bpm = detector.estimateTempo()         // top result
-let candidates = detector.getTempoCandidates()  // ranked alternatives
+let candidates = detector.tempoCandidates         // ranked alternatives
 
 // Reuse for another signal
 detector.reset()
@@ -96,7 +99,7 @@ detector.reset()
 
 ## Configuration
 
-`BpmDetection.Options` controls the algorithm behavior:
+`BpmDetectionOptions` controls the algorithm behavior:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -104,15 +107,17 @@ detector.reset()
 | `bpmRange` | `40...300` | Valid tempo range — candidates outside are discarded |
 | `beatsPerBar` | `4` | Beats per bar for comb-filter spacing (3 for waltz, etc.) |
 | `perceptualWeightingAmount` | `0.0` | Mid-tempo bias strength (0.0 = neutral, 1.0 = full bias toward ~130 BPM) |
+| `confidenceLevel` | `.moderate` | How aggressively to reject non-rhythmic audio (`.disabled`, `.low`, `.moderate`, `.high`) |
 
-`BpmAnalysis` adds file-level parameters:
+`BpmAnalysisOptions` wraps file-level parameters and a nested `detection` property:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `bufferDuration` | `1.0` | Duration in seconds of each analysis chunk |
 | `minimumDuration` | `15` | Files shorter than half this are looped in-memory; `nil` to disable |
-| `matchesRequired` | `nil` | Number of consistent periodic estimates for early exit; `nil` processes entire file |
-| `tolerance` | `0` | BPM tolerance for consensus matching (0 = exact) |
+| `matchesRequired` | `3` | Number of consistent periodic estimates for early exit; `nil` processes entire file |
+| `tolerance` | `1` | BPM tolerance for consensus matching (±1 BPM accommodates lag quantization jitter) |
+| `detection` | `.init()` | Nested `BpmDetectionOptions` (see table above) |
 
 ## Architecture
 

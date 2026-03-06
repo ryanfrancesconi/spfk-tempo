@@ -42,7 +42,7 @@ final class AutocorrelationFFT {
         imaginaryPartBuffer = Array(repeating: 0, count: fftLength)
     }
 
-    func acfUnityNormalised(input: [Float], lagCount requestedLagCount: Int, output: inout [Float]) {
+    func acfUnityNormalized(input: [Float], lagCount requestedLagCount: Int, output: inout [Float]) {
         let inputCount = input.count
         guard inputCount > 0, requestedLagCount > 0 else { return }
         ensureCapacity(inputCount: inputCount)

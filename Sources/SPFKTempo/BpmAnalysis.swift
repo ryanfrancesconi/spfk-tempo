@@ -25,7 +25,7 @@ public actor BpmAnalysis: Sendable {
     private let eventHandler: URLProgressEventHandler?
     private var bpmDetection: BpmDetection
     private let audioFile: AVAudioFile
-    private var results: CountableResult<Bpm>
+    private var results: CountableResult<Bpm?>
 
     var processTask: Task<Void, Error>?
 
@@ -33,34 +33,18 @@ public actor BpmAnalysis: Sendable {
     ///
     /// - Parameters:
     ///   - url: A file URL for any audio format supported by Core Audio.
-    ///   - bufferDuration: Duration in seconds of each analysis chunk. Larger
-    ///     values reduce overhead but increase latency before the first estimate.
-    ///   - minimumDuration: Files shorter than half this value are looped in-memory
-    ///     to provide enough material for detection. Pass `nil` to disable looping.
-    ///   - matchesRequired: Number of consistent periodic estimates needed
-    ///     to stop early. Pass `nil` to process the entire file.
-    ///   - tolerance: BPM tolerance for consensus matching. When greater than zero,
-    ///     two estimates within this range are considered equivalent.
-    ///   - options: Detection algorithm options (quality, BPM range, etc.).
+    ///   - options: Analysis and detection options.
     ///   - eventHandler: Optional callback for progress and completion events.
     /// - Throws: If the audio file cannot be opened.
     public init(
         url: URL,
-        bufferDuration: TimeInterval = 1,
-        minimumDuration: TimeInterval? = 15,
-        matchesRequired: Int? = nil,
-        tolerance: Double = 0,
-        options: BpmDetection.Options = .init(quality: .balanced),
+        options: BpmAnalysisOptions = .init(),
         eventHandler: URLProgressEventHandler? = nil
     ) throws {
         let audioFile = try AVAudioFile(forReading: url)
 
         self.init(
             audioFile: audioFile,
-            bufferDuration: bufferDuration,
-            minimumDuration: minimumDuration,
-            matchesRequired: matchesRequired,
-            tolerance: tolerance,
             options: options,
             eventHandler: eventHandler
         )
@@ -70,38 +54,33 @@ public actor BpmAnalysis: Sendable {
     ///
     /// - Parameters:
     ///   - audioFile: An open `AVAudioFile` to analyze.
-    ///   - bufferDuration: Duration in seconds of each analysis chunk.
-    ///   - minimumDuration: Files shorter than half this value are looped in-memory.
-    ///     Pass `nil` to disable looping.
-    ///   - matchesRequired: Number of consistent periodic estimates needed to stop early.
-    ///   - tolerance: BPM tolerance for consensus matching.
-    ///   - options: Detection algorithm options.
+    ///   - options: Analysis and detection options.
     ///   - eventHandler: Optional callback for progress and completion events.
     public init(
         audioFile: AVAudioFile,
-        bufferDuration: TimeInterval = 1,
-        minimumDuration: TimeInterval? = 15,
-        matchesRequired: Int? = nil,
-        tolerance: Double = 0,
-        options: BpmDetection.Options = .init(),
+        options: BpmAnalysisOptions = .init(),
         eventHandler: URLProgressEventHandler? = nil
     ) {
-        self.bufferDuration = max(0.1, bufferDuration)
-        self.minimumDuration = minimumDuration
+        bufferDuration = max(0.1, options.bufferDuration)
+        minimumDuration = options.minimumDuration
         self.eventHandler = eventHandler
         self.audioFile = audioFile
 
-        if tolerance > 0 {
-            results = CountableResult(matchesRequired: matchesRequired) { a, b in
-                a.isMultiple(of: b, tolerance: tolerance)
+        if options.tolerance > 0 {
+            results = CountableResult(matchesRequired: options.matchesRequired) { a, b in
+                switch (a, b) {
+                case (nil, nil): return true
+                case let (a?, b?): return a.isMultiple(of: b, tolerance: options.tolerance)
+                default: return false
+                }
             }
         } else {
-            results = CountableResult(matchesRequired: matchesRequired)
+            results = CountableResult(matchesRequired: options.matchesRequired)
         }
 
         bpmDetection = BpmDetection(
             sampleRate: audioFile.processingFormat.sampleRate.float,
-            options: options
+            options: options.detection
         )
     }
 
@@ -109,11 +88,13 @@ public actor BpmAnalysis: Sendable {
     ///
     /// Streams the audio file through the detection engine, periodically estimating
     /// tempo and collecting results for consensus voting. If `matchesRequired` was set,
-    /// processing stops early once enough consistent estimates are collected.
+    /// processing stops early once enough consistent estimates are collected —
+    /// including when enough estimates agree that no tempo is present.
     ///
-    /// - Returns: The detected tempo as a ``Bpm`` value.
-    /// - Throws: If no tempo could be determined from the audio content.
-    public func process() async throws -> Bpm {
+    /// - Returns: The detected tempo as a ``Bpm`` value, or `nil` if the consensus
+    ///   determined no rhythmic content was found.
+    /// - Throws: If the analysis produced no results at all.
+    public func process() async throws -> Bpm? {
         processTask = Task<Void, Error> {
             let audioAnalysis = AudioFileScanner(
                 bufferDuration: bufferDuration,
@@ -148,23 +129,21 @@ public actor BpmAnalysis: Sendable {
 
             Log.debug("periodicProgress", value)
 
-            if let bpm = Bpm(value),
-               results.append(bpm)
-            { // true and it thinks it has a solid Bpm, so cancel the task
+            let bpm = Bpm(value)
+
+            if results.append(bpm) {
                 processTask?.cancel()
 
                 Log.debug("periodicProgress met matches required:", value)
             }
 
         case .data(format: _, length: let length, samples: let samples):
-            bpmDetection.process(samples.pointee, Int(length))
+            bpmDetection.process(samples.pointee, count: Int(length))
 
         case .complete:
             // Final estimation with all accumulated data
             let value = bpmDetection.estimateTempo().rounded(.toNearestOrAwayFromZero)
-            if let bpm = Bpm(value) {
-                _ = results.append(bpm)
-            }
+            _ = results.append(Bpm(value))
         }
     }
 }

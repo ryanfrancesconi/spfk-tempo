@@ -20,15 +20,15 @@ class BpmAnalysisDevelopmentTests: TestCaseModel {
         guard url.exists else { return }
 
         let bpm = try await BpmAnalysis(url: url).process()
-        #expect(bpm.isMultiple(of: 110, tolerance: bpmTolerance))
+        #expect(bpm?.isMultiple(of: 110, tolerance: bpmTolerance) == true)
     }
 
     @Test func drumloop_200() async throws {
         let url = URL(fileURLWithPath: "/Users/rf/Downloads/TestResources/bpm/200_drumloop.m4a")
         guard url.exists else { return }
 
-        let bpm = try await BpmAnalysis(url: url, options: .init(quality: .accurate)).process()
-        #expect(bpm.isMultiple(of: 200, tolerance: bpmTolerance))
+        let bpm = try await BpmAnalysis(url: url, options: .init(detection: .init(quality: .accurate))).process()
+        #expect(bpm?.isMultiple(of: 200, tolerance: bpmTolerance) == true)
     }
 
     @Test func drumloop_75() async throws {
@@ -36,8 +36,8 @@ class BpmAnalysisDevelopmentTests: TestCaseModel {
 
         guard url.exists else { return }
 
-        let bpm = try await BpmAnalysis(url: url, options: .init(quality: .accurate)).process()
-        #expect(bpm.isMultiple(of: 75, tolerance: bpmTolerance))
+        let bpm = try await BpmAnalysis(url: url, options: .init(detection: .init(quality: .accurate))).process()
+        #expect(bpm?.isMultiple(of: 75, tolerance: bpmTolerance) == true)
     }
 
     @Test func longSong() async throws {
@@ -48,12 +48,12 @@ class BpmAnalysisDevelopmentTests: TestCaseModel {
 
         guard url.exists else { return }
 
-        let ba = try BpmAnalysis(url: url, matchesRequired: 3, options: .init(quality: .fast)) { event in
+        let ba = try BpmAnalysis(url: url, options: .init(detection: .init(quality: .fast))) { event in
             Log.debug(event.progress)
         }
 
         let bpm = try await ba.process()
-        #expect(bpm.isMultiple(of: 122, tolerance: bpmTolerance))
+        #expect(bpm?.isMultiple(of: 122, tolerance: bpmTolerance) == true)
     }
 
     @Test func cancelTask() async throws {
@@ -64,8 +64,8 @@ class BpmAnalysisDevelopmentTests: TestCaseModel {
 
         guard url.exists else { return }
 
-        let task = Task<Bpm, Error>(priority: .high) {
-            try await BpmAnalysis(url: url, matchesRequired: 5).process()
+        let task = Task<Bpm?, Error>(priority: .high) {
+            try await BpmAnalysis(url: url, options: .init(matchesRequired: 5)).process()
         }
 
         Task { @MainActor in
@@ -78,7 +78,7 @@ class BpmAnalysisDevelopmentTests: TestCaseModel {
 
         let bpm = try #require(result.successValue)
 
-        #expect(bpm.isMultiple(of: 122, tolerance: bpmTolerance))
+        #expect(bpm?.isMultiple(of: 122, tolerance: bpmTolerance) == true)
     }
 }
 

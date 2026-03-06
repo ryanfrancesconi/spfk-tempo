@@ -10,99 +10,60 @@ import Foundation
 /// template matcher reduces octave errors (e.g. 120 vs 60 BPM).
 ///
 /// Supports both batch and streaming usage:
-/// - **Batch**: Call ``estimateTempoOfSamples(_:_:)-1yn1l`` with a complete audio buffer.
-/// - **Streaming**: Feed chunks via ``process(_:_:)-85q2c``, then call ``estimateTempo()``
+/// - **Batch**: Call ``estimateTempoOfSamples(_:count:)`` with a complete audio buffer.
+/// - **Streaming**: Feed chunks via ``process(_:count:)``, then call ``estimateTempo()``
 ///   when ready for a result.
 ///
 /// For file-level analysis with consensus voting and early exit, use ``BpmAnalysis`` instead.
 public final class BpmDetection {
-    /// Controls the tradeoff between detection speed and accuracy.
-    /// Higher quality uses more overlapping analysis windows for finer onset resolution.
-    public enum AnalysisQuality: Int, Sendable {
-        /// No overlap. ~4x faster than `.accurate`, suitable for strong rhythmic material.
-        case fast = 1
-        /// 50% overlap. ~2x faster than `.accurate`, good general-purpose default.
-        case balanced = 2
-        /// 75% overlap. Most accurate onset detection, highest CPU cost.
-        case accurate = 4
-    }
-
-    /// Configuration for the BPM detection algorithm.
-    public struct Options {
-        /// The analysis quality level, controlling the overlap between FFT windows.
-        public var quality: AnalysisQuality
-
-        /// The range of BPM values to consider. Candidates outside this range are discarded.
-        public var bpmRange: ClosedRange<Float>
-
-        /// Number of beats per bar, used for comb-filter periodicity scoring.
-        public var beatsPerBar: Int
-
-        /// Perceptual weighting amount that biases results toward mid-tempo ranges.
-        /// 0.0 = no bias (most neutral/accurate),
-        /// 1.0 = full legacy weighting toward ~130 BPM.
-        public var perceptualWeightingAmount: Float
-
-        /// Creates detection options.
-        ///
-        /// - Parameters:
-        ///   - quality: Analysis quality level. Defaults to `.balanced`.
-        ///   - bpmRange: Valid BPM range. Defaults to 40–300.
-        ///   - beatsPerBar: Beats per bar for comb filtering. Defaults to 4.
-        ///   - perceptualWeightingAmount: Mid-tempo bias strength (0.0–1.0). Defaults to 0.0.
-        public init(
-            quality: AnalysisQuality = .balanced,
-            bpmRange: ClosedRange<Float> = 40 ... 300,
-            beatsPerBar: Int = 4,
-            perceptualWeightingAmount: Float = 0.0
-        ) {
-            self.quality = quality
-            self.bpmRange = bpmRange
-            self.beatsPerBar = beatsPerBar
-            self.perceptualWeightingAmount = perceptualWeightingAmount
-        }
-    }
-
     // MARK: - Internal DSP tuning constants
 
-    /// Log-compression factor applied to spectral magnitudes before computing onset flux.
-    /// Higher values emphasize quieter onsets; lower values favor loud transients.
-    private let fluxCompression: Float = 2.0
+    /// Compile-time constants for the detection algorithm. Grouped by function
+    /// and declared `static` since they don't vary per instance.
+    private enum Tuning {
+        /// Log-compression factor applied to spectral magnitudes before computing
+        /// onset flux. Higher values emphasize quieter onsets; lower values favor
+        /// loud transients.
+        static let fluxCompression: Float = 2.0
 
-    /// Weight for the fundamental lag in the harmonic template scorer.
-    private let harmonicWeight1: Float = 1.0
-    /// Weight for the 2x lag (half-tempo harmonic) in the template scorer.
-    private let harmonicWeight2: Float = 0.25
-    /// Weight for the 3x lag (third-tempo harmonic) in the template scorer.
-    private let harmonicWeight3: Float = 0.10
-    /// Weight for the 4x lag (quarter-tempo harmonic) in the template scorer.
-    private let harmonicWeight4: Float = 0.05
+        /// Blend between comb-filter score (0.0) and harmonic template score (1.0)
+        /// for the final candidate ranking.
+        static let templateBlend: Float = 0.35
 
-    /// Penalty applied when the half-lag (double-tempo) shows a strong peak,
-    /// reducing octave-error false positives (e.g. picking 240 instead of 120).
-    private let harmonicPenalty2: Float = 0.10
-    /// Penalty applied when the third-lag (triple-tempo) shows a strong peak.
-    private let harmonicPenalty3: Float = 0.03
+        /// Per-band autocorrelation weights controlling how much each frequency
+        /// range contributes to the combined periodicity signal.
+        enum BandWeights {
+            /// Low band (0–550 Hz): kick drums and bass onsets.
+            static let low: Float = 1.0
+            /// Mid band (550–4000 Hz): snare, vocals, harmonic content.
+            static let mid: Float = 0.8
+            /// High band (4–16 kHz): hi-hats and cymbal transients.
+            static let high: Float = 0.5
+            /// Broadband RMS energy envelope.
+            static let rms: Float = 0.1
+        }
 
-    /// Blend between comb-filter score (0.0) and harmonic template score (1.0)
-    /// for the final candidate ranking.
-    private let templateBlend: Float = 0.35
+        /// Weights and penalties for the harmonic template scorer that reduces
+        /// octave errors (e.g. picking 120 instead of 60 BPM).
+        enum HarmonicTemplate {
+            /// Weight for the fundamental lag.
+            static let weight1: Float = 1.0
+            /// Weight for the 2× lag (half-tempo harmonic).
+            static let weight2: Float = 0.25
+            /// Weight for the 3× lag (third-tempo harmonic).
+            static let weight3: Float = 0.10
+            /// Weight for the 4× lag (quarter-tempo harmonic).
+            static let weight4: Float = 0.05
+            /// Penalty when the half-lag (double-tempo) shows a strong peak.
+            static let penalty2: Float = 0.10
+            /// Penalty when the third-lag (triple-tempo) shows a strong peak.
+            static let penalty3: Float = 0.03
+        }
 
-    /// Autocorrelation weight for the low-frequency band (0–550 Hz).
-    /// Kick drums and bass onsets dominate here.
-    private let lowFrequencyWeight: Float = 1.0
-    /// Autocorrelation weight for the mid-frequency band (550–4000 Hz).
-    /// Snare, vocals, and harmonic content.
-    private let midFrequencyWeight: Float = 0.8
-    /// Autocorrelation weight for the high-frequency band (4000–16000 Hz).
-    /// Hi-hats and cymbal transients.
-    private let highFrequencyWeight: Float = 0.5
-    /// Autocorrelation weight for the broadband RMS energy envelope.
-    /// Provides a coarse overall loudness signal.
-    private let rmsWeight: Float = 0.1
+    }
 
     /// The current detection options. Can be modified between calls.
-    public var options: Options
+    public var options: BpmDetectionOptions
 
     /// The sample rate of the input audio signal in Hz.
     private let inputSampleRate: Float
@@ -142,7 +103,7 @@ public final class BpmDetection {
     private var blockRmsEnvelope: [Float] = []
 
     /// BPM candidates collected from each `estimateTempo()` call for final consensus.
-    private var tempoCandidates: [Double] = []
+    private var _tempoCandidates: [Double] = []
 
     /// Scratch buffer for accumulating incoming audio samples into full analysis blocks.
     private var inputBlock: [Float]
@@ -188,7 +149,7 @@ public final class BpmDetection {
     /// - Parameters:
     ///   - sampleRate: The sample rate of the input audio in Hz.
     ///   - options: Detection algorithm options.
-    public init(sampleRate: Float, options: Options = Options()) {
+    public init(sampleRate: Float, options: BpmDetectionOptions = .init()) {
         self.options = options
         inputSampleRate = sampleRate
 
@@ -238,7 +199,7 @@ public final class BpmDetection {
     @inline(__always)
     private func positiveSpectralFlux(_ current: [Float], _ previous: [Float]) -> Float {
         // Compressed positive flux is more onset-focused and less noisy than raw power diff.
-        let compression = max(0.0001, fluxCompression)
+        let compression = max(0.0001, Tuning.fluxCompression)
         var total: Float = 0
         for i in 0 ..< current.count {
             let c = log1p(current[i] * compression)
@@ -284,15 +245,15 @@ public final class BpmDetection {
     /// Processes a buffer of audio samples and returns the estimated tempo.
     ///
     /// This is a batch convenience method — it processes all samples at once and
-    /// returns the result. For streaming usage, call ``process(_:_:)-85q2c`` followed
+    /// returns the result. For streaming usage, call ``process(_:count:)`` followed
     /// by ``estimateTempo()`` separately.
     ///
     /// - Parameters:
     ///   - samples: Pointer to mono Float32 audio samples.
-    ///   - nsamples: Number of samples in the buffer.
+    ///   - count: Number of samples in the buffer.
     /// - Returns: The estimated tempo in BPM, or 0 if detection failed.
-    public func estimateTempoOfSamples(_ samples: UnsafePointer<Float>, _ nsamples: Int) -> Double {
-        let buf = UnsafeBufferPointer(start: samples, count: nsamples)
+    public func estimateTempoOfSamples(_ samples: UnsafePointer<Float>, count: Int) -> Double {
+        let buf = UnsafeBufferPointer(start: samples, count: count)
         return estimateTempoOfSamples(buf)
     }
 
@@ -303,22 +264,22 @@ public final class BpmDetection {
     ///
     /// - Parameters:
     ///   - samples: Pointer to mono Float32 audio samples.
-    ///   - nsamples: Number of samples in the buffer.
-    public func process(_ samples: UnsafePointer<Float>, _ nsamples: Int) {
-        let buf = UnsafeBufferPointer(start: samples, count: nsamples)
+    ///   - count: Number of samples in the buffer.
+    public func process(_ samples: UnsafePointer<Float>, count: Int) {
+        let buf = UnsafeBufferPointer(start: samples, count: count)
         process(buf)
     }
 
     /// Processes a buffer of audio samples and returns the estimated tempo.
     ///
-    /// Array convenience overload of ``estimateTempoOfSamples(_:_:)-1yn1l``.
+    /// Array convenience overload of ``estimateTempoOfSamples(_:count:)``.
     public func estimateTempoOfSamples(_ samples: [Float]) -> Double {
         samples.withUnsafeBufferPointer { estimateTempoOfSamples($0) }
     }
 
     /// Feeds audio samples into the detection engine for later tempo estimation.
     ///
-    /// Array convenience overload of ``process(_:_:)-85q2c``.
+    /// Array convenience overload of ``process(_:count:)``.
     public func process(_ samples: [Float]) {
         samples.withUnsafeBufferPointer { process($0) }
     }
@@ -327,7 +288,7 @@ public final class BpmDetection {
     ///
     /// Flushes any buffered partial block, then runs the full autocorrelation,
     /// comb-filter, and harmonic-template scoring pipeline. The top candidate
-    /// BPM values are available via ``getTempoCandidates()`` after this call.
+    /// BPM values are available via ``tempoCandidates`` after this call.
     ///
     /// - Returns: The estimated tempo in BPM, or 0 if detection failed.
     public func estimateTempo() -> Double {
@@ -345,13 +306,11 @@ public final class BpmDetection {
         return finish()
     }
 
-    /// Returns the ranked BPM candidates from the most recent ``estimateTempo()`` call.
+    /// The ranked BPM candidates from the most recent ``estimateTempo()`` call.
     ///
     /// The first element is the top candidate (same value returned by `estimateTempo()`).
     /// Subsequent entries are alternative candidates in descending score order.
-    public func getTempoCandidates() -> [Double] {
-        tempoCandidates
-    }
+    public var tempoCandidates: [Double] { _tempoCandidates }
 
     /// Clears all accumulated onset data, tempo candidates, and internal buffers.
     ///
@@ -362,21 +321,12 @@ public final class BpmDetection {
         midFrequencyFlux.removeAll(keepingCapacity: true)
         highFrequencyFlux.removeAll(keepingCapacity: true)
         blockRmsEnvelope.removeAll(keepingCapacity: true)
-        tempoCandidates.removeAll(keepingCapacity: true)
+        _tempoCandidates.removeAll(keepingCapacity: true)
         pendingStepFillCount = 0
 
-        lowFrequencyPreviousSpectrum.withUnsafeMutableBufferPointer { spectrumBuffer in
-            guard let base = spectrumBuffer.baseAddress else { return }
-            base.update(repeating: 0, count: spectrumBuffer.count)
-        }
-        midFrequencyPreviousSpectrum.withUnsafeMutableBufferPointer { spectrumBuffer in
-            guard let base = spectrumBuffer.baseAddress else { return }
-            base.update(repeating: 0, count: spectrumBuffer.count)
-        }
-        highFrequencyPreviousSpectrum.withUnsafeMutableBufferPointer { spectrumBuffer in
-            guard let base = spectrumBuffer.baseAddress else { return }
-            base.update(repeating: 0, count: spectrumBuffer.count)
-        }
+        lowFrequencyPreviousSpectrum = Array(repeating: 0, count: lowFrequencyPreviousSpectrum.count)
+        midFrequencyPreviousSpectrum = Array(repeating: 0, count: midFrequencyPreviousSpectrum.count)
+        highFrequencyPreviousSpectrum = Array(repeating: 0, count: highFrequencyPreviousSpectrum.count)
     }
 
     private func estimateTempoOfSamples(_ samples: UnsafeBufferPointer<Float>) -> Double {
@@ -431,14 +381,14 @@ public final class BpmDetection {
     }
 
     /// Subtract a local moving average from the flux signal and half-wave rectify,
-    /// producing a normalised onset function that is less sensitive to overall loudness.
+    /// producing a normalized onset function that is less sensitive to overall loudness.
     /// The window spans approximately 3 seconds of analysis frames.
-    private func normaliseFlux(_ flux: [Float]) -> [Float] {
+    private func normalizeFlux(_ flux: [Float]) -> [Float] {
         let count = flux.count
         guard count > 0 else { return flux }
         let hopsPerSec = inputSampleRate / Float(stepSize)
         let halfWindow = max(4, Int(hopsPerSec * 1.5))
-        var normalised = [Float](repeating: 0, count: count)
+        var normalized = [Float](repeating: 0, count: count)
         for i in 0 ..< count {
             let windowStart = max(0, i - halfWindow)
             let windowEnd = min(count, i + halfWindow + 1)
@@ -448,21 +398,28 @@ public final class BpmDetection {
             }
             let localMean = sum / Float(windowEnd - windowStart)
             let diff = flux[i] - localMean
-            normalised[i] = diff > 0 ? diff : 0
+            normalized[i] = diff > 0 ? diff : 0
         }
-        return normalised
+        return normalized
     }
 
+    /// Runs the full scoring pipeline on accumulated onset data and returns the best BPM.
+    ///
+    /// Computes weighted multi-band autocorrelation, applies comb-filter and harmonic
+    /// template scoring, then picks the strongest peak. A confidence gate rejects
+    /// results where the peak doesn't stand out from the background distribution.
+    ///
+    /// - Returns: The estimated tempo in BPM, or 0 if detection failed or confidence was too low.
     private func finish() -> Double {
-        tempoCandidates.removeAll(keepingCapacity: true)
+        _tempoCandidates.removeAll(keepingCapacity: true)
 
         let onsetFrameCount = lowFrequencyFlux.count
         if onsetFrameCount == 0 { return 0 }
 
-        // Normalise onset flux signals to reduce loudness bias.
-        let normalisedLowFlux = normaliseFlux(lowFrequencyFlux)
-        let normalisedMidFlux = normaliseFlux(midFrequencyFlux)
-        let normalisedHighFlux = normaliseFlux(highFrequencyFlux)
+        // Normalize onset flux signals to reduce loudness bias.
+        let normalizedLowFlux = normalizeFlux(lowFrequencyFlux)
+        let normalizedMidFlux = normalizeFlux(midFrequencyFlux)
+        let normalizedHighFlux = normalizeFlux(highFrequencyFlux)
 
         let hopsPerSec = inputSampleRate / Float(stepSize)
 
@@ -477,37 +434,37 @@ public final class BpmDetection {
 
         if autocorrelationBuffer.count < acfLength { autocorrelationBuffer = Array(repeating: 0, count: acfLength) }
         if autocorrelationScratch.count < acfLength { autocorrelationScratch = Array(repeating: 0, count: acfLength) }
-        autocorrelationBuffer.withUnsafeMutableBufferPointer { autocorrelationPointer in
-            guard let base = autocorrelationPointer.baseAddress else { return }
-            base.update(repeating: 0, count: acfLength)
+
+        for i in 0 ..< acfLength {
+            autocorrelationBuffer[i] = 0
         }
 
-        autocorrelation.acfUnityNormalised(
-            input: normalisedLowFlux, lagCount: acfLength, output: &autocorrelationScratch
+        autocorrelation.acfUnityNormalized(
+            input: normalizedLowFlux, lagCount: acfLength, output: &autocorrelationScratch
         )
         for i in 0 ..< acfLength {
-            autocorrelationBuffer[i] += autocorrelationScratch[i] * lowFrequencyWeight
+            autocorrelationBuffer[i] += autocorrelationScratch[i] * Tuning.BandWeights.low
         }
 
-        autocorrelation.acfUnityNormalised(
-            input: normalisedMidFlux, lagCount: acfLength, output: &autocorrelationScratch
+        autocorrelation.acfUnityNormalized(
+            input: normalizedMidFlux, lagCount: acfLength, output: &autocorrelationScratch
         )
         for i in 0 ..< acfLength {
-            autocorrelationBuffer[i] += autocorrelationScratch[i] * midFrequencyWeight
+            autocorrelationBuffer[i] += autocorrelationScratch[i] * Tuning.BandWeights.mid
         }
 
-        autocorrelation.acfUnityNormalised(
-            input: normalisedHighFlux, lagCount: acfLength, output: &autocorrelationScratch
+        autocorrelation.acfUnityNormalized(
+            input: normalizedHighFlux, lagCount: acfLength, output: &autocorrelationScratch
         )
         for i in 0 ..< acfLength {
-            autocorrelationBuffer[i] += autocorrelationScratch[i] * highFrequencyWeight
+            autocorrelationBuffer[i] += autocorrelationScratch[i] * Tuning.BandWeights.high
         }
 
-        autocorrelation.acfUnityNormalised(
+        autocorrelation.acfUnityNormalized(
             input: blockRmsEnvelope, lagCount: acfLength, output: &autocorrelationScratch
         )
         for i in 0 ..< acfLength {
-            autocorrelationBuffer[i] += autocorrelationScratch[i] * rmsWeight
+            autocorrelationBuffer[i] += autocorrelationScratch[i] * Tuning.BandWeights.rms
         }
 
         let minLag = AutocorrelationFFT.bpmToLag(maxBPM, hopsPerSec: hopsPerSec)
@@ -524,7 +481,7 @@ public final class BpmDetection {
         comb.filter(
             autocorrelation: autocorrelationBuffer, autocorrelationLength: acfLength, filtered: &combFilterBuffer
         )
-        unityNormalise(&combFilterBuffer, count: combFilterLength)
+        unityNormalize(&combFilterBuffer, count: combFilterLength)
 
         let blend = max(0.0, min(1.0, options.perceptualWeightingAmount))
         if blend > 0 {
@@ -542,7 +499,7 @@ public final class BpmDetection {
             }
         }
 
-        let templateMix = max(0.0, min(1.0, templateBlend))
+        let templateMix = max(0.0, min(1.0, Tuning.templateBlend))
         for i in 0 ..< combFilterLength {
             let templateScore = harmonicTemplateScore(
                 index: i,
@@ -553,7 +510,7 @@ public final class BpmDetection {
             )
             templateScores[i] = combFilterBuffer[i] * (1.0 - templateMix) + templateScore * templateMix
         }
-        unityNormalise(&templateScores, count: combFilterLength)
+        unityNormalize(&templateScores, count: combFilterLength)
 
         var peaks: [(score: Float, idx: Int)] = []
         peaks.reserveCapacity(max(8, combFilterLength / 8))
@@ -568,6 +525,19 @@ public final class BpmDetection {
 
         if peaks.isEmpty { return 0 }
         peaks.sort { $0.score > $1.score }
+
+        // Confidence gate: reject results where the best peak doesn't stand out
+        // from the background score distribution. For noise-like signals the
+        // template scores are nearly uniform, producing a low peak-to-median ratio.
+        let confidenceThreshold = options.confidenceLevel.threshold
+        if confidenceThreshold > 0 {
+            let peakScore = peaks[0].score
+            let sortedScores = Array(templateScores[0 ..< combFilterLength]).sorted()
+            let medianScore = sortedScores[combFilterLength / 2]
+            if medianScore > 0, peakScore / medianScore < confidenceThreshold {
+                return 0
+            }
+        }
 
         var seen = Set<Int>()
         seen.reserveCapacity(peaks.count)
@@ -589,11 +559,11 @@ public final class BpmDetection {
             // Scale dedup quantization relative to BPM: ~1 BPM resolution at all tempos.
             let quantised = Int(Double(bpm).rounded())
             if seen.insert(quantised).inserted {
-                tempoCandidates.append(Double(bpm))
+                _tempoCandidates.append(Double(bpm))
             }
         }
 
-        return tempoCandidates.first ?? 0
+        return _tempoCandidates.first ?? 0
     }
 
     @inline(__always)
@@ -615,21 +585,21 @@ public final class BpmDetection {
         }
 
         // Reward consistency at integer multiples of the same period (slower tempos / longer lags).
-        var score = atLag(lag) * harmonicWeight1
-        score += atLag(lag * 2) * harmonicWeight2
-        score += atLag(lag * 3) * harmonicWeight3
-        score += atLag(lag * 4) * harmonicWeight4
+        var score = atLag(lag) * Tuning.HarmonicTemplate.weight1
+        score += atLag(lag * 2) * Tuning.HarmonicTemplate.weight2
+        score += atLag(lag * 3) * Tuning.HarmonicTemplate.weight3
+        score += atLag(lag * 4) * Tuning.HarmonicTemplate.weight4
 
         // Penalize candidates whose faster harmonics (shorter lags) are strong,
         // reducing over-fast octave errors (e.g. picking 120 instead of 60).
-        score -= atLag(max(1, lag / 2)) * harmonicPenalty2
-        score -= atLag(max(1, lag / 3)) * harmonicPenalty3
+        score -= atLag(max(1, lag / 2)) * Tuning.HarmonicTemplate.penalty2
+        score -= atLag(max(1, lag / 3)) * Tuning.HarmonicTemplate.penalty3
 
         return max(0, score)
     }
 
     @inline(__always)
-    private func unityNormalise(_ values: inout [Float], count: Int) {
+    private func unityNormalize(_ values: inout [Float], count: Int) {
         guard count > 0 else { return }
 
         var maxValue = values[0]
@@ -688,4 +658,5 @@ public final class BpmDetection {
         }
         return interpolatedPeakIndex
     }
+
 }
