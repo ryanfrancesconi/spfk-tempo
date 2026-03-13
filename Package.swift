@@ -15,7 +15,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/ryanfrancesconi/spfk-audio-base", from: "0.0.6"),
-        .package(url: "https://github.com/ryanfrancesconi/spfk-testing", from: "0.0.5"),
+        .package(url: "https://github.com/ryanfrancesconi/spfk-testing", from: "0.0.9"),
     ],
     targets: [
         .target(
