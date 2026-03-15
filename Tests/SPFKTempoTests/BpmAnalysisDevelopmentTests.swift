@@ -76,9 +76,7 @@ class BpmAnalysisDevelopmentTests: TestCaseModel {
         let result = await task.result
         Log.debug(result)
 
-        let bpm = try #require(result.successValue)
-
-        #expect(bpm?.isMultiple(of: 122, tolerance: bpmTolerance) == true)
+        #expect(task.isCancelled)
     }
 }
 
