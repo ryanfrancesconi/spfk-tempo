@@ -22,10 +22,10 @@ import SPFKBase
 public actor BpmAnalysis: Sendable {
     private let bufferDuration: TimeInterval
     private let minimumDuration: TimeInterval?
-    private let eventHandler: URLProgressEventHandler?
     private var bpmDetection: BpmDetection
     private let audioFile: AVAudioFile
     private var results: CountableResult<Bpm?>
+    private let eventHandler: URLProgressEventHandler?
 
     var processTask: Task<Void, Error>?
 
@@ -69,9 +69,9 @@ public actor BpmAnalysis: Sendable {
         if options.tolerance > 0 {
             results = CountableResult(matchesRequired: options.matchesRequired) { a, b in
                 switch (a, b) {
-                case (nil, nil): return true
-                case let (a?, b?): return a.isMultiple(of: b, tolerance: options.tolerance)
-                default: return false
+                case (nil, nil): true
+                case let (a?, b?): a.isMultiple(of: b, tolerance: options.tolerance)
+                default: false
                 }
             }
         } else {
