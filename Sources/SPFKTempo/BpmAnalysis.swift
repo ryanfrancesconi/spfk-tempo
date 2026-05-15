@@ -26,6 +26,7 @@ public actor BpmAnalysis: Sendable {
     private let audioFile: AVAudioFile
     private var results: CountableResult<Bpm?>
     private let eventHandler: URLProgressEventHandler?
+    private let preferredRange: ClosedRange<Float>?
 
     var processTask: Task<Void, Error>?
 
@@ -78,6 +79,8 @@ public actor BpmAnalysis: Sendable {
             results = CountableResult(matchesRequired: options.matchesRequired)
         }
 
+        preferredRange = options.preferredRange
+
         bpmDetection = BpmDetection(
             sampleRate: audioFile.processingFormat.sampleRate.float,
             options: options.detection
@@ -129,6 +132,11 @@ public actor BpmAnalysis: Sendable {
         return bpm
     }
 
+    private func octaveCorrected(_ bpm: Bpm?) -> Bpm? {
+        guard let bpm, let range = preferredRange else { return bpm }
+        return bpm.clamped(to: range)
+    }
+
     private func analyze(_ event: AudioFileScannerEvent) async {
         switch event {
         case let .progress(url: url, value: value):
@@ -139,7 +147,7 @@ public actor BpmAnalysis: Sendable {
 
             Log.debug("periodicProgress", value)
 
-            let bpm = Bpm(value)
+            let bpm = octaveCorrected(Bpm(value))
 
             if results.append(bpm) {
                 processTask?.cancel()
@@ -153,7 +161,8 @@ public actor BpmAnalysis: Sendable {
         case .complete:
             // Final estimation with all accumulated data
             let value = bpmDetection.estimateTempo().rounded(.toNearestOrAwayFromZero)
-            _ = results.append(Bpm(value))
+            _ = results.append(octaveCorrected(Bpm(value)))
         }
     }
 }
+

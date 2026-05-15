@@ -15,6 +15,15 @@ class BpmAnalysisDevelopmentTests: TestCaseModel {
     /// Allow ±2 BPM tolerance for real-world audio detection due to lag quantization.
     private let bpmTolerance: Double = 2
     
+    @Test func drumstem_110() async throws {
+        let url = URL(fileURLWithPath: "/Users/rf/Desktop/st_sample_content/Loop/bpm/110BPM_CONFUSION_DRUMSTEM_1.m4a")
+        guard url.exists else { return }
+
+        let options = BpmAnalysisOptions(preferredRange: 60 ... 180)
+        let bpm = try await BpmAnalysis(url: url, options: options).process()
+        #expect(bpm?.rawValue == 110)
+    }
+
     @Test func drumloop_110() async throws {
         let url = URL(fileURLWithPath: "/Users/rf/Downloads/TestResources/bpm/110_drumloop.m4a")
         guard url.exists else { return }

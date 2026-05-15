@@ -41,17 +41,27 @@ public struct BpmAnalysisOptions: Sendable {
     /// Detection algorithm options (quality, BPM range, etc.).
     public var detection: BpmDetectionOptions
 
+    /// Preferred BPM range for post-processing octave correction.
+    ///
+    /// After the detection engine produces an estimate, the result is octave-shifted
+    /// (×2 or ÷2) until it falls within this range. This corrects common half-tempo
+    /// and double-tempo errors without constraining the underlying detection algorithm.
+    /// Pass `nil` to disable octave correction.
+    public var preferredRange: ClosedRange<Float>?
+
     public init(
         bufferDuration: TimeInterval = 1,
         minimumDuration: TimeInterval? = 15,
         matchesRequired: Int? = 3,
         tolerance: Double = 1,
-        detection: BpmDetectionOptions = .init()
+        detection: BpmDetectionOptions = .init(),
+        preferredRange: ClosedRange<Float>? = 60 ... 180
     ) {
         self.bufferDuration = bufferDuration
         self.minimumDuration = minimumDuration
         self.matchesRequired = matchesRequired
         self.tolerance = tolerance
         self.detection = detection
+        self.preferredRange = preferredRange
     }
 }
