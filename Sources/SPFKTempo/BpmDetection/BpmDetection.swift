@@ -57,7 +57,7 @@ public final class BpmDetection {
             /// Penalty when the half-lag (double-tempo) shows a strong peak.
             static let penalty2: Float = 0.10
             /// Penalty when the third-lag (triple-tempo) shows a strong peak.
-            static let penalty3: Float = 0.03
+            static let penalty3: Float = 0.20
         }
 
     }
@@ -469,7 +469,9 @@ public final class BpmDetection {
 
         let minLag = AutocorrelationFFT.bpmToLag(maxBPM, hopsPerSec: hopsPerSec)
         let maxLag = AutocorrelationFFT.bpmToLag(minBPM, hopsPerSec: hopsPerSec)
-        if acfLength < maxLag { return 0 }
+        if acfLength < maxLag {
+            return 0
+        }
 
         let comb = ACFCombFilter(
             beatsPerBar: options.beatsPerBar, minLag: minLag, maxLag: maxLag, hopsPerSec: hopsPerSec
@@ -523,7 +525,9 @@ public final class BpmDetection {
             }
         }
 
-        if peaks.isEmpty { return 0 }
+        if peaks.isEmpty {
+            return 0
+        }
         peaks.sort { $0.score > $1.score }
 
         // Confidence gate: reject results where the best peak doesn't stand out

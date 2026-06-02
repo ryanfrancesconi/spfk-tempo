@@ -144,15 +144,10 @@ public actor BpmAnalysis: Sendable {
 
         case .periodicProgress:
             let value = bpmDetection.estimateTempo().rounded(.toNearestOrAwayFromZero)
-
-            Log.debug("periodicProgress", value)
-
             let bpm = octaveCorrected(Bpm(value))
 
             if results.append(bpm) {
                 processTask?.cancel()
-
-                Log.debug("periodicProgress met matches required:", value)
             }
 
         case .data(format: _, length: let length, samples: let samples):
@@ -161,7 +156,8 @@ public actor BpmAnalysis: Sendable {
         case .complete:
             // Final estimation with all accumulated data
             let value = bpmDetection.estimateTempo().rounded(.toNearestOrAwayFromZero)
-            _ = results.append(octaveCorrected(Bpm(value)))
+            let bpm = octaveCorrected(Bpm(value))
+            _ = results.append(bpm)
         }
     }
 }
