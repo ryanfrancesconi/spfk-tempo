@@ -137,14 +137,25 @@ public actor BpmAnalysis: Sendable {
         return bpm.clamped(to: range)
     }
 
+    /// Rounds `raw` to the nearest integer, but prefers `raw * 2` when doubling
+    /// produces a value closer to a whole number than the raw value itself.
+    /// This recovers half-tempo sub-harmonic detections (e.g. 62.48 → 125).
+    private func roundedPreferringDouble(_ raw: Double) -> Double {
+        let rawRounded = raw.rounded(.toNearestOrAwayFromZero)
+        let doubled = raw * 2
+        let doubledRounded = doubled.rounded(.toNearestOrAwayFromZero)
+        let cap = preferredRange.map { Double($0.upperBound) } ?? 300
+        guard doubled <= cap else { return rawRounded }
+        return abs(doubled - doubledRounded) < abs(raw - rawRounded) ? doubledRounded : rawRounded
+    }
+
     private func analyze(_ event: AudioFileScannerEvent) async {
         switch event {
         case let .progress(url: url, value: value):
             await eventHandler?(.progress(url: url, value: value))
 
         case .periodicProgress:
-            let value = bpmDetection.estimateTempo().rounded(.toNearestOrAwayFromZero)
-            let bpm = octaveCorrected(Bpm(value))
+            let bpm = octaveCorrected(Bpm(roundedPreferringDouble(bpmDetection.estimateTempo())))
 
             if results.append(bpm) {
                 processTask?.cancel()
@@ -155,8 +166,7 @@ public actor BpmAnalysis: Sendable {
 
         case .complete:
             // Final estimation with all accumulated data
-            let value = bpmDetection.estimateTempo().rounded(.toNearestOrAwayFromZero)
-            let bpm = octaveCorrected(Bpm(value))
+            let bpm = octaveCorrected(Bpm(roundedPreferringDouble(bpmDetection.estimateTempo())))
             _ = results.append(bpm)
         }
     }
