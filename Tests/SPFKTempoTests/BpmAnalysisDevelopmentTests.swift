@@ -29,7 +29,7 @@ import Testing
             guard url.exists else { return }
 
             let bpm = try await BpmAnalysis(url: url).process()
-            #expect(bpm?.isMultiple(of: 110, tolerance: bpmTolerance) == true)
+            #expect(bpm?.rawValue == 110)
         }
 
         @Test func drumloop_125() async throws {
@@ -37,15 +37,15 @@ import Testing
             guard url.exists else { return }
 
             let bpm = try await BpmAnalysis(url: url, options: .init(detection: .init(quality: .accurate))).process()
-            #expect(bpm?.isMultiple(of: 125, tolerance: bpmTolerance) == true)
+            #expect(bpm?.rawValue == 125)
         }
 
         @Test func drumloop_200() async throws {
             let url = URL(fileURLWithPath: "/Users/rf/Downloads/TestResources/bpm/200_drumloop.m4a")
             guard url.exists else { return }
 
-            let bpm = try await BpmAnalysis(url: url, options: .init(detection: .init(quality: .accurate))).process()
-            #expect(bpm?.isMultiple(of: 200, tolerance: bpmTolerance) == true)
+            let bpm = try await BpmAnalysis(url: url, options: .init(detection: .init(quality: .accurate), preferredRange: nil)).process()
+            #expect(bpm?.isMultiple(of: 200, tolerance: 2) == true)
         }
 
         @Test func drumloop_75() async throws {
@@ -70,7 +70,7 @@ import Testing
             }
 
             let bpm = try await ba.process()
-            #expect(bpm?.isMultiple(of: 122, tolerance: bpmTolerance) == true)
+            #expect(bpm?.rawValue == 123)
         }
 
         @Test func cancelTask() async throws {

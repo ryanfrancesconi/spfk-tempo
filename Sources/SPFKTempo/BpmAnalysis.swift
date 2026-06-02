@@ -137,16 +137,37 @@ public actor BpmAnalysis: Sendable {
         return bpm.clamped(to: range)
     }
 
-    /// Rounds `raw` to the nearest integer, but prefers `raw * 2` when doubling
-    /// produces a value closer to a whole number than the raw value itself.
-    /// This recovers half-tempo sub-harmonic detections (e.g. 62.48 → 125).
+    /// When `raw` is suspiciously slow (< 60 BPM) and a 4× or 2× multiple of
+    /// `raw` appears in the top candidates, returns that faster multiple.
+    /// Checked in 4× → 2× order so a quarter-tempo sub-harmonic (e.g. 50 for a
+    /// 200 BPM file) promotes all the way to the correct fundamental, not just
+    /// half-tempo.
+    private func preferFasterMultipleIfCandidateExists(_ raw: Double) -> Double {
+        guard raw < 60 else { return raw }
+        let cap = preferredRange.map { Double($0.upperBound) } ?? 300.0
+        let candidates = bpmDetection.tempoCandidates
+        for multiplier in [4.0, 2.0] {
+            let faster = raw * multiplier
+            if faster > cap { continue }
+            if let idx = candidates.firstIndex(where: { abs($0 - faster) <= 5.0 }), idx <= 3 {
+                return faster
+            }
+        }
+        return raw
+    }
+
+    /// Rounds `raw` to the nearest integer, doubling first when `raw` rounds to
+    /// exactly X.5 at one decimal place — the specific signature of a half-tempo
+    /// sub-harmonic detection (e.g. 62.48 → 62.5 → 125).
     private func roundedPreferringDouble(_ raw: Double) -> Double {
         let rawRounded = raw.rounded(.toNearestOrAwayFromZero)
+        let tenths = Int((raw * 10).rounded(.toNearestOrAwayFromZero))
+        guard tenths % 10 == 5 else { return rawRounded }
         let doubled = raw * 2
         let doubledRounded = doubled.rounded(.toNearestOrAwayFromZero)
         let cap = preferredRange.map { Double($0.upperBound) } ?? 300
         guard doubled <= cap else { return rawRounded }
-        return abs(doubled - doubledRounded) < abs(raw - rawRounded) ? doubledRounded : rawRounded
+        return doubledRounded
     }
 
     private func analyze(_ event: AudioFileScannerEvent) async {
@@ -155,7 +176,9 @@ public actor BpmAnalysis: Sendable {
             await eventHandler?(.progress(url: url, value: value))
 
         case .periodicProgress:
-            let bpm = octaveCorrected(Bpm(roundedPreferringDouble(bpmDetection.estimateTempo())))
+            let raw = bpmDetection.estimateTempo()
+            let adjusted = preferFasterMultipleIfCandidateExists(raw)
+            let bpm = octaveCorrected(Bpm(roundedPreferringDouble(adjusted)))
 
             if results.append(bpm) {
                 processTask?.cancel()
@@ -166,7 +189,9 @@ public actor BpmAnalysis: Sendable {
 
         case .complete:
             // Final estimation with all accumulated data
-            let bpm = octaveCorrected(Bpm(roundedPreferringDouble(bpmDetection.estimateTempo())))
+            let raw = bpmDetection.estimateTempo()
+            let adjusted = preferFasterMultipleIfCandidateExists(raw)
+            let bpm = octaveCorrected(Bpm(roundedPreferringDouble(adjusted)))
             _ = results.append(bpm)
         }
     }

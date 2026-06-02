@@ -55,7 +55,7 @@ public struct BpmAnalysisOptions: Sendable {
         matchesRequired: Int? = 3,
         tolerance: Double = 1,
         detection: BpmDetectionOptions = .init(),
-        preferredRange: ClosedRange<Float>? = 60 ... 180
+        preferredRange: ClosedRange<Float>? = 60 ... 200
     ) {
         self.bufferDuration = bufferDuration
         self.minimumDuration = minimumDuration
