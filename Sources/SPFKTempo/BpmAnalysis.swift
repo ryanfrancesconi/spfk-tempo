@@ -27,6 +27,7 @@ public actor BpmAnalysis: Sendable {
     private var results: CountableResult<Bpm?>
     private let eventHandler: URLProgressEventHandler?
     private let preferredRange: ClosedRange<Float>?
+    private let outputDecimalPlaces: Int
 
     var processTask: Task<Void, Error>?
 
@@ -80,6 +81,7 @@ public actor BpmAnalysis: Sendable {
         }
 
         preferredRange = options.preferredRange
+        outputDecimalPlaces = options.outputDecimalPlaces
 
         bpmDetection = BpmDetection(
             sampleRate: audioFile.processingFormat.sampleRate.float,
@@ -156,18 +158,16 @@ public actor BpmAnalysis: Sendable {
         return raw
     }
 
-    /// Rounds `raw` to the nearest integer, doubling first when `raw` rounds to
-    /// exactly X.5 at one decimal place — the specific signature of a half-tempo
-    /// sub-harmonic detection (e.g. 62.48 → 62.5 → 125).
-    private func roundedPreferringDouble(_ raw: Double) -> Double {
-        let rawRounded = raw.rounded(.toNearestOrAwayFromZero)
+    /// Doubles `raw` when it rounds to exactly X.5 at one decimal place — the
+    /// specific signature of a half-tempo sub-harmonic detection (e.g. 62.48 → 124.96).
+    /// Does not apply rounding; the caller applies decimal-place rounding after this.
+    private func applyHalfTempoCorrection(_ raw: Double) -> Double {
         let tenths = Int((raw * 10).rounded(.toNearestOrAwayFromZero))
-        guard tenths % 10 == 5 else { return rawRounded }
+        guard tenths % 10 == 5 else { return raw }
         let doubled = raw * 2
-        let doubledRounded = doubled.rounded(.toNearestOrAwayFromZero)
         let cap = preferredRange.map { Double($0.upperBound) } ?? 300
-        guard doubled <= cap else { return rawRounded }
-        return doubledRounded
+        guard doubled <= cap else { return raw }
+        return doubled
     }
 
     private func analyze(_ event: AudioFileScannerEvent) async {
@@ -178,7 +178,8 @@ public actor BpmAnalysis: Sendable {
         case .periodicProgress:
             let raw = bpmDetection.estimateTempo()
             let adjusted = preferFasterMultipleIfCandidateExists(raw)
-            let bpm = octaveCorrected(Bpm(roundedPreferringDouble(adjusted)))
+            let corrected = applyHalfTempoCorrection(adjusted)
+            let bpm = octaveCorrected(Bpm(corrected))?.rounded(to: outputDecimalPlaces)
 
             if results.append(bpm) {
                 processTask?.cancel()
@@ -191,7 +192,8 @@ public actor BpmAnalysis: Sendable {
             // Final estimation with all accumulated data
             let raw = bpmDetection.estimateTempo()
             let adjusted = preferFasterMultipleIfCandidateExists(raw)
-            let bpm = octaveCorrected(Bpm(roundedPreferringDouble(adjusted)))
+            let corrected = applyHalfTempoCorrection(adjusted)
+            let bpm = octaveCorrected(Bpm(corrected))?.rounded(to: outputDecimalPlaces)
             _ = results.append(bpm)
         }
     }

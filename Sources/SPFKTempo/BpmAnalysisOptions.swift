@@ -49,13 +49,20 @@ public struct BpmAnalysisOptions: Sendable {
     /// Pass `nil` to disable octave correction.
     public var preferredRange: ClosedRange<Float>?
 
+    /// Number of decimal places to retain in the output BPM value (0–3).
+    ///
+    /// `0` returns integer BPM (e.g. 120), `1` retains one decimal place (e.g. 120.5),
+    /// and so on. Values outside 0–3 are clamped.
+    public var outputDecimalPlaces: Int
+
     public init(
         bufferDuration: TimeInterval = 1,
         minimumDuration: TimeInterval? = 15,
         matchesRequired: Int? = 3,
         tolerance: Double = 1,
         detection: BpmDetectionOptions = .init(),
-        preferredRange: ClosedRange<Float>? = 60 ... 200
+        preferredRange: ClosedRange<Float>? = 60 ... 200,
+        outputDecimalPlaces: Int = 0
     ) {
         self.bufferDuration = bufferDuration
         self.minimumDuration = minimumDuration
@@ -63,5 +70,6 @@ public struct BpmAnalysisOptions: Sendable {
         self.tolerance = tolerance
         self.detection = detection
         self.preferredRange = preferredRange
+        self.outputDecimalPlaces = outputDecimalPlaces.clamped(to: 0 ... 3)
     }
 }
