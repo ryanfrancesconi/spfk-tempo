@@ -1,4 +1,6 @@
 # SPFKTempo
+[![CI](https://github.com/ryanfrancesconi/spfk-tempo/actions/workflows/ci.yml/badge.svg?branch=development)](https://github.com/ryanfrancesconi/spfk-tempo/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/github/v/tag/ryanfrancesconi/spfk-tempo)](https://github.com/ryanfrancesconi/spfk-tempo/tags)
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fryanfrancesconi%2Fspfk-tempo%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/ryanfrancesconi/spfk-tempo)
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fryanfrancesconi%2Fspfk-tempo%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/ryanfrancesconi/spfk-tempo)
 
