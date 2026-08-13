@@ -127,6 +127,10 @@ public actor BpmAnalysis: Sendable {
             task?.cancel()
         }
 
+        // Read from the enclosing task, not `processTask` — that one is also cancelled by
+        // `analyze(_:)` for early termination, which is not a user cancel.
+        try Task.checkCancellation()
+
         guard let bpm = results.choose() else {
             throw NSError(description: "Failed to detect bpm")
         }
