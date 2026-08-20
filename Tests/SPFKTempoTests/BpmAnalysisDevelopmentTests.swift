@@ -10,7 +10,7 @@ import Testing
 
 #if os(macOS)
 
-    @Suite(.tags(.file, .development))
+    @Suite(.tags(.file, .development, .slow))
     class BpmAnalysisDevelopmentTests: TestCaseModel {
         /// Allow ±2 BPM tolerance for real-world audio detection due to lag quantization.
         private let bpmTolerance: Double = 2
