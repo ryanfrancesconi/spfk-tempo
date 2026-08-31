@@ -7,88 +7,20 @@ A Swift package for detecting the tempo (BPM) of audio files using multi-band sp
 
 Supports any audio format readable by Core Audio and provides both a high-level async API with progress reporting and a low-level streaming API for real-time ingestion.
 
-## Usage
+## Detecting tempo
 
-### Detecting tempo from a file
+`BpmAnalysis` is an actor that reads a file and returns a `Bpm`. It reports progress and honors cancellation, and
+takes a `BpmAnalysisOptions` carrying both file-level parameters and the detection options nested
+inside it.
 
-```swift
-import SPFKTempo
+Files shorter than 7.5 seconds — half the default `minimumDuration` of 15 — are automatically looped
+in memory to provide enough material for stable detection.
 
-let bpm = try await BpmAnalysis(url: audioFileURL).process()
-print("Detected: \(bpm)")  // "Detected: Bpm(120)"
-```
+Processing stops as soon as 3 consistent periodic estimates agree within ±1 BPM. `matchesRequired`
+and `tolerance` tighten or loosen that consensus.
 
-### Handling short files
-
-Files shorter than 7.5 seconds (half the default `minimumDuration` of 15) are automatically looped in-memory to provide enough material for stable detection:
-
-```swift
-// Explicit minimum duration — loops the file if shorter than half this value
-let bpm = try await BpmAnalysis(url: shortFileURL, options: .init(minimumDuration: 20)).process()
-
-// Disable looping
-let bpm = try await BpmAnalysis(url: audioFileURL, options: .init(minimumDuration: nil)).process()
-```
-
-### Early exit with consensus voting
-
-By default, processing stops as soon as 3 consistent periodic estimates agree (±1 BPM).
-Override `matchesRequired` or `tolerance` for stricter or looser consensus:
-
-```swift
-let options = BpmAnalysisOptions(
-    matchesRequired: 5,         // require more agreement before stopping
-    tolerance: 2.0,             // ±2 BPM counts as a match
-    detection: .init(
-        quality: .accurate,     // 75% window overlap
-        bpmRange: 60 ... 200    // constrain search range
-    )
-)
-
-let bpm = try await BpmAnalysis(url: audioFileURL, options: options).process()
-
-// Process the entire file without early exit
-let options = BpmAnalysisOptions(matchesRequired: nil)
-let bpm = try await BpmAnalysis(url: audioFileURL, options: options).process()
-```
-
-### Progress reporting and cancellation
-
-```swift
-let analysis = try BpmAnalysis(
-    url: audioFileURL,
-    options: .init(detection: .init(quality: .fast))
-) { event in
-    print("Progress: \(event.progress)")
-}
-
-let task = Task {
-    try await analysis.process()
-}
-
-// Cancel after timeout
-try await Task.sleep(for: .seconds(5))
-task.cancel()
-```
-
-### Low-level streaming API
-
-`BpmDetection` accepts raw samples directly for real-time or custom decoding pipelines:
-
-```swift
-let detector = BpmDetection(sampleRate: 48000, options: .init(quality: .balanced))
-
-// Feed mono audio chunks as they arrive
-for chunk in audioChunks {
-    detector.process(chunk)
-}
-
-let bpm = detector.estimateTempo()         // top result
-let candidates = detector.tempoCandidates         // ranked alternatives
-
-// Reuse for another signal
-detector.reset()
-```
+`BpmDetection` is the low-level entry point, accepting raw samples directly for a real-time or
+custom decoding pipeline.
 
 ## Analysis Quality
 
