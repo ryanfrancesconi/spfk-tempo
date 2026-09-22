@@ -86,7 +86,7 @@ import Testing
             }
 
             Task { @MainActor in
-                try await Task.sleep(seconds: 1)
+                try? await Task.sleep(seconds: 0.5)
                 task.cancel()
             }
 
