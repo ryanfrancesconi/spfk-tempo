@@ -67,9 +67,7 @@ import Testing
         @Test func longSong() async throws {
             let url = try resource("07 Drukqs - Disk 01 - bbydhyonchord.mp3")
 
-            let ba = try BpmAnalysis(url: url, options: .init(detection: .init(quality: .fast))) { event in
-                Log.debug(event.progress)
-            }
+            let ba = try BpmAnalysis(url: url, options: .init(detection: .init(quality: .fast)))
 
             let bpm = try await ba.process()
             #expect(bpm?.rawValue == 123)
@@ -87,8 +85,7 @@ import Testing
                 task.cancel()
             }
 
-            let result = await task.result
-            Log.debug(result)
+            _ = await task.result
 
             #expect(task.isCancelled)
         }
