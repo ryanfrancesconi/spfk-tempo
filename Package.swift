@@ -29,6 +29,7 @@ let package = Package(
         .target(
             name: "SPFKTempo",
             dependencies: [
+                .targetItem(name: "SPFKTimePitchKernel", condition: nil),
                 .product(name: "SPFKAudioBase", package: "spfk-audio-base"),
             ]
         ),

@@ -29,6 +29,8 @@ A C API over [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsm
 - **Live** (`TimePitchKernelInputFramesNeeded` then `TimePitchKernelProcess`, block by block): every allocation happens in `TimePitchKernelCreate`, and the setters are safe to call from any thread while the render thread runs. A rate change ramps over 20 ms.
 - **Offline** (`TimePitchKernelRenderExact`): renders exactly `round(inputFrames / rate)` frames, reading real context beyond each edge of the material where the file has it, and refuses any other output count. Renders are deterministic.
 
+`TimePitchRenderer` is the Swift entry point to the offline path: it renders a `TimePitchDescription` (from spfk-audio-base) over a frame range of an `AVAudioPCMBuffer`, treating the rest of the buffer as context, and throws rather than return a wrong length or a silent result. `contextFrames(for:sampleRate:channelCount:quality:)` says how much context to read.
+
 `spfk-time-pitch-bench <stereo.wav> [out dir]` measures exactness, alignment, identity, latency, CPU, allocations, determinism, stereo coherence and the timbre options. Build it with `swift build -c release`.
 
 ## Analysis Quality
@@ -116,7 +118,7 @@ Any audio format readable by Core Audio's `AVAudioFile`, including WAV, AIF, FLA
 
 | Package | Purpose |
 |---------|---------|
-| [spfk-audio-base](https://github.com/ryanfrancesconi/spfk-audio-base) | `Bpm`, `AudioFileScanner`, `CountableResult`, `URLProgressEvent` |
+| [spfk-audio-base](https://github.com/ryanfrancesconi/spfk-audio-base) | `Bpm`, `AudioFileScanner`, `CountableResult`, `URLProgressEvent`, `TimePitchDescription` |
 | [spfk-testing](https://github.com/ryanfrancesconi/spfk-testing) | Test audio resources (test target only) |
 
 `SPFKTimePitchKernel` depends on nothing but Accelerate.
