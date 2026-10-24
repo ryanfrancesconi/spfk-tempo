@@ -41,7 +41,6 @@ struct OffsetOutput {
     float *operator[](int c) const { return channels[c] + offset; }
 };
 
-constexpr double kRampSeconds = 0.02;
 constexpr int kExactChunkFrames = 8192;
 
 } // namespace
@@ -94,7 +93,7 @@ struct TimePitchKernel {
         const double target = targetRate.load(std::memory_order_relaxed);
         if (target != rampTarget) {
             rampTarget = target;
-            rampStepPerFrame = (target - currentRate) / (kRampSeconds * sampleRate);
+            rampStepPerFrame = (target - currentRate) / (kTimePitchRateRampSeconds * sampleRate);
         }
         if (currentRate == rampTarget) return currentRate;
 

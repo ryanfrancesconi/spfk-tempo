@@ -24,6 +24,9 @@ typedef enum {
 static const double kTimePitchMinRate = 0.5;
 static const double kTimePitchMaxRate = 2.0;
 
+/// How long a live kernel takes to move to a new rate, linearly, in output seconds.
+static const double kTimePitchRateRampSeconds = 0.02;
+
 /// Seeds the phase randomization, so an offline render of the same input and settings is bit-identical.
 static const long kTimePitchSeed = 0x53504654;
 
@@ -38,7 +41,8 @@ TimePitchKernelRef TimePitchKernelCreate(uint32_t channels, double sampleRate, u
                                          TimePitchKernelQuality quality, bool live);
 void TimePitchKernelDestroy(TimePitchKernelRef kernel);
 
-/// Thread-safe. `rate` is clamped into the supported range. A live kernel ramps to a new rate over 20 ms.
+/// Thread-safe. `rate` is clamped into the supported range. A live kernel ramps to a new rate over
+/// `kTimePitchRateRampSeconds`.
 void TimePitchKernelSetTargets(TimePitchKernelRef kernel, double rate, double transposeFactor);
 
 /// Thread-safe. A tonality limit of 0 is off and a formant base of 0 is automatic detection.
