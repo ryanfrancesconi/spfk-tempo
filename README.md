@@ -22,6 +22,15 @@ and `tolerance` tighten or loosen that consensus.
 `BpmDetection` is the low-level entry point, accepting raw samples directly for a real-time or
 custom decoding pipeline.
 
+## Time and pitch: `SPFKTimePitchKernel`
+
+A C API over [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) (MIT, vendored under `Sources/SPFKTimePitchKernel/vendor/` with its licenses and revisions), for changing rate and pitch independently. It is C so that clients need no Swift/C++ interop.
+
+- **Live** (`TimePitchKernelInputFramesNeeded` then `TimePitchKernelProcess`, block by block): every allocation happens in `TimePitchKernelCreate`, and the setters are safe to call from any thread while the render thread runs. A rate change ramps over 20 ms.
+- **Offline** (`TimePitchKernelRenderExact`): renders exactly `round(inputFrames / rate)` frames, reading real context beyond each edge of the material where the file has it, and refuses any other output count. Renders are deterministic.
+
+`spfk-time-pitch-bench <stereo.wav> [out dir]` measures exactness, alignment, identity, latency, CPU, allocations, determinism, stereo coherence and the timbre options. Build it with `swift build -c release`.
+
 ## Analysis Quality
 
 | Quality | Overlap | Relative Speed | Best For |
@@ -109,6 +118,8 @@ Any audio format readable by Core Audio's `AVAudioFile`, including WAV, AIF, FLA
 |---------|---------|
 | [spfk-audio-base](https://github.com/ryanfrancesconi/spfk-audio-base) | `Bpm`, `AudioFileScanner`, `CountableResult`, `URLProgressEvent` |
 | [spfk-testing](https://github.com/ryanfrancesconi/spfk-testing) | Test audio resources (test target only) |
+
+`SPFKTimePitchKernel` depends on nothing but Accelerate.
 
 ## Requirements
 
