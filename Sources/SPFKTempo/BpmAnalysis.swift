@@ -105,6 +105,7 @@ public actor BpmAnalysis: Sendable {
                 bufferDuration: bufferDuration,
                 sendPeriodicProgressEvery: 4,
                 minimumDuration: minimumDuration,
+                mixesToMono: false,
                 eventHandler: analyze(_:)
             )
 
