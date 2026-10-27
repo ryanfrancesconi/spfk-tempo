@@ -139,25 +139,6 @@ public actor BpmAnalysis: Sendable {
         return bpm.clamped(to: range)
     }
 
-    /// When `raw` is suspiciously slow (< 60 BPM) and a 4× or 2× multiple of
-    /// `raw` appears in the top candidates, returns that faster multiple.
-    /// Checked in 4× → 2× order so a quarter-tempo sub-harmonic (e.g. 50 for a
-    /// 200 BPM file) promotes all the way to the correct fundamental, not just
-    /// half-tempo.
-    private func preferFasterMultipleIfCandidateExists(_ raw: Double) -> Double {
-        guard raw < 60 else { return raw }
-        let cap = preferredRange.map { Double($0.upperBound) } ?? 300.0
-        let candidates = bpmDetection.tempoCandidates
-        for multiplier in [4.0, 2.0] {
-            let faster = raw * multiplier
-            if faster > cap { continue }
-            if let idx = candidates.firstIndex(where: { abs($0 - faster) <= 5.0 }), idx <= 3 {
-                return faster
-            }
-        }
-        return raw
-    }
-
     /// Whether a looped file has been shown to repeat inside its own length. Nil until enough
     /// audio has been processed to tell; true for a file that is not looped.
     private func loopedFileRepeats() -> Bool? {
@@ -176,8 +157,7 @@ public actor BpmAnalysis: Sendable {
     /// One vote from everything processed so far; nil when no tempo is present.
     private func vote() -> Bpm? {
         let raw = bpmDetection.estimateTempo()
-        let adjusted = preferFasterMultipleIfCandidateExists(raw)
-        return octaveCorrected(Bpm(adjusted))?.rounded(to: outputDecimalPlaces)
+        return octaveCorrected(Bpm(raw))?.rounded(to: outputDecimalPlaces)
     }
 
     private func analyze(_ event: AudioFileScannerEvent) async {
