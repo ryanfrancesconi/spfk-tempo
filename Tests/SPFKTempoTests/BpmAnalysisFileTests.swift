@@ -40,11 +40,11 @@ class BpmAnalysisFileTests: TestCaseModel {
         #expect(bpm == nil, "This file has no clear tempo but it is returning: \(String(describing: bpm))")
     }
     
-    /// A single transient (cowbell hit) has no repeating rhythm.
-    /// With looping disabled the file is too short for false periodicity detection.
+    /// A single transient (cowbell hit) has no repeating rhythm. The default options loop the
+    /// 2 s file to 15 s, which must not turn its length into a tempo.
     @Test func singleRhythmicHit() async throws {
         let url = TestBundleResources.shared.cowbell_wav
-        let bpm = try await BpmAnalysis(url: url, options: .init(minimumDuration: nil)).process()
+        let bpm = try await BpmAnalysis(url: url).process()
         #expect(bpm == nil, "This file has no clear tempo but it is returning: \(String(describing: bpm))")
     }
 

@@ -29,6 +29,11 @@ public actor BpmAnalysis: Sendable {
     private let preferredRange: ClosedRange<Float>?
     private let outputDecimalPlaces: Int
 
+    /// The file's own length when the scanner loops it, so a vote can check the file repeats
+    /// inside itself; nil when the file is read once.
+    private let loopedDuration: TimeInterval?
+    private var loopedSelfSimilarity: Float?
+
     var processTask: Task<Void, Error>?
 
     /// Creates a BPM analyzer for the audio file at `url`.
@@ -82,6 +87,9 @@ public actor BpmAnalysis: Sendable {
 
         preferredRange = options.preferredRange
         outputDecimalPlaces = options.outputDecimalPlaces
+
+        let duration = Double(audioFile.length) / audioFile.processingFormat.sampleRate
+        loopedDuration = options.minimumDuration.flatMap { duration > 0 && duration * 2 < $0 ? duration : nil }
 
         bpmDetection = BpmDetection(
             sampleRate: audioFile.processingFormat.sampleRate.float,
@@ -174,18 +182,38 @@ public actor BpmAnalysis: Sendable {
         return doubled
     }
 
+    /// Whether a looped file has been shown to repeat inside its own length. Nil until enough
+    /// audio has been processed to tell; true for a file that is not looped.
+    private func loopedFileRepeats() -> Bool? {
+        guard let loopedDuration else { return true }
+        if loopedSelfSimilarity == nil {
+            loopedSelfSimilarity = bpmDetection.selfSimilarity(within: loopedDuration)
+        }
+        guard let loopedSelfSimilarity else { return nil }
+        return loopedSelfSimilarity >= Self.loopedSelfSimilarityFloor
+    }
+
+    /// Below this, a looped file's only period is its own length. One-shots measure about 0.02,
+    /// a short tabla phrase 0.21, vendor loops 0.26 and up.
+    static let loopedSelfSimilarityFloor: Float = 0.1
+
+    /// One vote from everything processed so far; nil when no tempo is present.
+    private func vote() -> Bpm? {
+        let raw = bpmDetection.estimateTempo()
+        let adjusted = preferFasterMultipleIfCandidateExists(raw)
+        let corrected = applyHalfTempoCorrection(adjusted)
+        return octaveCorrected(Bpm(corrected))?.rounded(to: outputDecimalPlaces)
+    }
+
     private func analyze(_ event: AudioFileScannerEvent) async {
         switch event {
         case let .progress(url: url, value: value):
             await eventHandler?(.progress(url: url, value: value))
 
         case .periodicProgress:
-            let raw = bpmDetection.estimateTempo()
-            let adjusted = preferFasterMultipleIfCandidateExists(raw)
-            let corrected = applyHalfTempoCorrection(adjusted)
-            let bpm = octaveCorrected(Bpm(corrected))?.rounded(to: outputDecimalPlaces)
+            guard let repeats = loopedFileRepeats() else { return }
 
-            if results.append(bpm) {
+            if results.append(repeats ? vote() : nil) {
                 processTask?.cancel()
             }
 
@@ -193,12 +221,8 @@ public actor BpmAnalysis: Sendable {
             bpmDetection.process(samples.pointee, count: Int(length))
 
         case .complete:
-            // Final estimation with all accumulated data
-            let raw = bpmDetection.estimateTempo()
-            let adjusted = preferFasterMultipleIfCandidateExists(raw)
-            let corrected = applyHalfTempoCorrection(adjusted)
-            let bpm = octaveCorrected(Bpm(corrected))?.rounded(to: outputDecimalPlaces)
-            _ = results.append(bpm)
+            let repeats = loopedFileRepeats() ?? false
+            _ = results.append(repeats ? vote() : nil)
         }
     }
 }

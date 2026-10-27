@@ -170,6 +170,45 @@ extension BpmDetection {
         return _tempoCandidates.first ?? 0
     }
 
+    /// The strongest periodicity in the first `seconds` of audio, 0–1, over lags from the fastest
+    /// tempo in range to half that span. Nil until that much audio has been processed.
+    ///
+    /// A file the scanner loops gains a period equal to its own length, so a one-shot reads as a
+    /// loop; this measures whether the file repeats inside itself at all.
+    func selfSimilarity(within seconds: Double) -> Float? {
+        let hopsPerSec = inputSampleRate / Float(stepSize)
+        let frameCount = Int((seconds * Double(hopsPerSec)).rounded())
+        guard frameCount > 0, lowFrequencyFlux.count >= frameCount else { return nil }
+
+        let minLag = AutocorrelationFFT.bpmToLag(options.bpmRange.upperBound, hopsPerSec: hopsPerSec)
+        let maxLag = frameCount / 2
+        guard minLag <= maxLag else { return 0 }
+
+        let lagCount = maxLag + 1
+        var combined = [Float](repeating: 0, count: lagCount)
+        var scratch = [Float](repeating: 0, count: lagCount)
+        let bands: [([Float], Float)] = [
+            (normalizeFlux(Array(lowFrequencyFlux[0 ..< frameCount])), Tuning.BandWeights.low),
+            (normalizeFlux(Array(midFrequencyFlux[0 ..< frameCount])), Tuning.BandWeights.mid),
+            (normalizeFlux(Array(highFrequencyFlux[0 ..< frameCount])), Tuning.BandWeights.high),
+            (Array(blockRmsEnvelope[0 ..< frameCount]), Tuning.BandWeights.rms),
+        ]
+        var weightSum: Float = 0
+        for (signal, weight) in bands {
+            autocorrelation.acfUnityNormalized(input: signal, lagCount: lagCount, output: &scratch)
+            for i in 0 ..< lagCount {
+                combined[i] += scratch[i] * weight
+            }
+            weightSum += weight
+        }
+
+        var peak: Float = 0
+        for lag in minLag ... maxLag where combined[lag] > peak {
+            peak = combined[lag]
+        }
+        return peak / weightSum
+    }
+
     @inline(__always)
     private func harmonicTemplateScore(
         index: Int,
