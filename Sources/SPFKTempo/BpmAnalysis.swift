@@ -9,9 +9,8 @@ import SPFKBase
 ///
 /// `BpmAnalysis` streams audio through an ``AudioFileScanner``, feeding chunks
 /// to a ``BpmDetection`` engine that performs multi-band onset detection and
-/// autocorrelation-based tempo estimation. Periodic estimates are compared via
-/// consensus voting (``CountableResult``), and processing stops early once
-/// enough consistent estimates have been collected.
+/// autocorrelation-based tempo estimation. Periodic estimates are tallied by
+/// octave family, and processing stops early once enough agree on one.
 ///
 /// Short files are automatically looped in-memory when shorter than half the
 /// `minimumDuration`, ensuring enough material for reliable tempo detection.
@@ -24,7 +23,7 @@ public actor BpmAnalysis: Sendable {
     private let minimumDuration: TimeInterval?
     private var bpmDetection: BpmDetection
     private let audioFile: AVAudioFile
-    private var results: CountableResult<Bpm?>
+    private var results: TempoVoteTally
     private let eventHandler: URLProgressEventHandler?
     private let preferredRange: ClosedRange<Float>?
     private let outputDecimalPlaces: Int
@@ -73,18 +72,7 @@ public actor BpmAnalysis: Sendable {
         self.eventHandler = eventHandler
         self.audioFile = audioFile
 
-        if options.tolerance > 0 {
-            results = CountableResult(matchesRequired: options.matchesRequired) { a, b in
-                switch (a, b) {
-                case (nil, nil): true
-                case let (a?, b?): a.isMultiple(of: b, tolerance: options.tolerance)
-                default: false
-                }
-            }
-        } else {
-            results = CountableResult(matchesRequired: options.matchesRequired)
-        }
-
+        results = TempoVoteTally(matchesRequired: options.matchesRequired, tolerance: options.tolerance)
         preferredRange = options.preferredRange
         outputDecimalPlaces = options.outputDecimalPlaces
 
@@ -100,12 +88,11 @@ public actor BpmAnalysis: Sendable {
     /// Runs the BPM analysis and returns the detected tempo.
     ///
     /// Streams the audio file through the detection engine, periodically estimating
-    /// tempo and collecting results for consensus voting. If `matchesRequired` was set,
-    /// processing stops early once enough consistent estimates are collected —
-    /// including when enough estimates agree that no tempo is present.
+    /// tempo. If `matchesRequired` was set, processing stops early once that many
+    /// estimates agree on an octave family; estimates finding no tempo never end it.
     ///
-    /// - Returns: The detected tempo as a ``Bpm`` value, or `nil` if the consensus
-    ///   determined no rhythmic content was found.
+    /// - Returns: The detected tempo as a ``Bpm`` value, or `nil` if no estimate
+    ///   found rhythmic content.
     /// - Throws: If the analysis produced no results at all.
     public func process() async throws -> Bpm? {
         processTask = Task<Void, Error> {
@@ -139,11 +126,11 @@ public actor BpmAnalysis: Sendable {
         // `analyze(_:)` for early termination, which is not a user cancel.
         try Task.checkCancellation()
 
-        guard let bpm = results.choose() else {
+        guard !results.isEmpty else {
             throw NSError(description: "Failed to detect bpm")
         }
 
-        return bpm
+        return results.decision
     }
 
     private func octaveCorrected(_ bpm: Bpm?) -> Bpm? {
