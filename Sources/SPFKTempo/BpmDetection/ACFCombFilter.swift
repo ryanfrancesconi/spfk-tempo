@@ -33,14 +33,16 @@ final class ACFCombFilter {
         return (base, count)
     }
 
-    func filter(autocorrelation: [Float], autocorrelationLength: Int, filtered: inout [Float]) {
+    /// Scores each lag by its autocorrelation at 1, `beatsPerBar`, and doubling multiples, each term
+    /// weighted by the share of the `frameCount`-frame signal its lag overlaps.
+    func filter(autocorrelation: [Float], autocorrelationLength: Int, frameCount: Int, filtered: inout [Float]) {
         let filteredLength = filteredLength()
 
         for filteredIndex in 0 ..< filteredLength {
             filtered[filteredIndex] = 0
             let lag = minLag + filteredIndex
             var multiple = 1
-            var contributionCount = 0
+            var weightSum: Float = 0
 
             while true {
                 let (base, count) = Self.contributingRange(lag: lag, multiple: multiple)
@@ -53,13 +55,14 @@ final class ACFCombFilter {
                     }
                 }
 
-                filtered[filteredIndex] += peak
-                contributionCount += 1
+                let overlap = max(0, Float(frameCount - lag * multiple) / Float(frameCount))
+                filtered[filteredIndex] += peak * overlap
+                weightSum += overlap
                 multiple = (multiple == 1) ? beatsPerBar : (multiple * 2)
             }
 
-            if contributionCount != 0 {
-                filtered[filteredIndex] /= Float(contributionCount)
+            if weightSum > 0 {
+                filtered[filteredIndex] /= weightSum
             }
         }
     }

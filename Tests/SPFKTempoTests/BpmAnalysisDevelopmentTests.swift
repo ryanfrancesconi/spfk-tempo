@@ -64,6 +64,17 @@ import Testing
             #expect(bpm?.isMultiple(of: 75, tolerance: bpmTolerance) == true)
         }
 
+        /// Eight-bar 120 BPM loops whose five-bar repeat (10 s) is a 48 BPM candidate's comb term,
+        /// measured early in the scan on little more than the loop's first bars.
+        @Test(arguments: ["02", "03", "04", "05", "06"], [AnalysisQuality.fast, .balanced, .accurate])
+        func electronicDrums_120(take: String, quality: AnalysisQuality) async throws {
+            let url = try resource("Electronic_Drums_120bpm_Key Em_i3_c3_\(take).m4a")
+            let options = BpmAnalysisOptions(detection: .init(quality: quality), preferredRange: 40 ... 300)
+
+            let bpm = try await BpmAnalysis(url: url, options: options).process()
+            #expect(bpm?.rawValue == 120)
+        }
+
         @Test func longSong() async throws {
             let url = try resource("07 Drukqs - Disk 01 - bbydhyonchord.mp3")
 

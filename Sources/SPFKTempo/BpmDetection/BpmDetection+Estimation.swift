@@ -81,7 +81,8 @@ extension BpmDetection {
         if templateScores.count < combFilterLength { templateScores = Array(repeating: 0, count: combFilterLength) }
 
         comb.filter(
-            autocorrelation: autocorrelationBuffer, autocorrelationLength: acfLength, filtered: &combFilterBuffer
+            autocorrelation: autocorrelationBuffer, autocorrelationLength: acfLength, frameCount: onsetFrameCount,
+            filtered: &combFilterBuffer
         )
         let rawComb = combFilterBuffer
         unityNormalize(&combFilterBuffer, count: combFilterLength)
