@@ -83,6 +83,7 @@ extension BpmDetection {
         comb.filter(
             autocorrelation: autocorrelationBuffer, autocorrelationLength: acfLength, filtered: &combFilterBuffer
         )
+        let rawComb = combFilterBuffer
         unityNormalize(&combFilterBuffer, count: combFilterLength)
 
         let blend = max(0.0, min(1.0, options.perceptualWeightingAmount))
@@ -133,12 +134,14 @@ extension BpmDetection {
         // Confidence gate: reject results where the best peak doesn't stand out
         // from the background score distribution. For noise-like signals the
         // template scores are nearly uniform, producing a low peak-to-median ratio.
+        // Confidence gate on the comb response before normalization: a flat response, noise or a
+        // drone, has a peak near its median, where a rhythm's peak stands well above it.
         let confidenceThreshold = options.confidenceLevel.threshold
         if confidenceThreshold > 0 {
-            let peakScore = peaks[0].score
-            let sortedScores = Array(templateScores[0 ..< combFilterLength]).sorted()
-            let medianScore = sortedScores[combFilterLength / 2]
-            if medianScore > 0, peakScore / medianScore < confidenceThreshold {
+            let sortedResponse = Array(rawComb[0 ..< combFilterLength]).sorted()
+            let peakResponse = sortedResponse[combFilterLength - 1]
+            let medianResponse = sortedResponse[combFilterLength / 2]
+            if medianResponse <= 0 || peakResponse / medianResponse < confidenceThreshold {
                 return 0
             }
         }

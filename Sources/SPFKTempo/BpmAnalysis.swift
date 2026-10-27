@@ -187,9 +187,6 @@ public actor BpmAnalysis: Sendable {
 
     /// One vote from everything processed so far; nil when no tempo is present.
     private func vote() -> Bpm? {
-        if ProcessInfo.processInfo.environment["SPFK_TEMPO_TRACE"] != nil {
-            FileHandle.standardError.write(Data("TRACE file \(audioFile.url.lastPathComponent)\n".utf8))
-        }
         let raw = bpmDetection.estimateTempo()
         let adjusted = preferFasterMultipleIfCandidateExists(raw)
         let corrected = applyHalfTempoCorrection(adjusted)
