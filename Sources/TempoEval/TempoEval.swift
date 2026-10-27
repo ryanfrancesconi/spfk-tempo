@@ -20,7 +20,7 @@ import SPFKTempo
 //   --quality fast|balanced|accurate   --min 40 --max 300 (the octave fold range)   --decimals 0
 // and expose what the dialog cannot change:
 //   --search-min 40 --search-max 300 (the engine's range)   --no-loop   --matches 3
-//   --confidence disabled|low|moderate|high
+//   --confidence disabled|low|moderate|high   --prior 0 (the engine's mid-tempo weighting, 0-1)
 //
 // Scores, per file, over the single tempo the public API returns:
 //   acc1   |estimate - reference| <= 4 % of the reference (madmom's TOLERANCE, ISMIR 2004)
@@ -147,6 +147,7 @@ struct Settings {
     var loops = true
     var matchesRequired: Int? = 3
     var confidence: ConfidenceLevel = .moderate
+    var prior: Float = 0
 
     /// `DetectTempoOptions.bpmAnalysisOptions` (spfk-processing), with the engine settings it leaves at
     /// their defaults exposed.
@@ -156,7 +157,7 @@ struct Settings {
         return BpmAnalysisOptions(
             minimumDuration: loops ? 15 : nil,
             matchesRequired: matchesRequired,
-            detection: .init(quality: quality, bpmRange: searchRange, confidenceLevel: confidence),
+            detection: .init(quality: quality, bpmRange: searchRange, perceptualWeightingAmount: prior, confidenceLevel: confidence),
             preferredRange: lo ... hi,
             outputDecimalPlaces: decimals
         )
@@ -164,7 +165,7 @@ struct Settings {
 
     var description: String {
         "quality=\(quality) fold=\(minBPM)-\(maxBPM) search=\(searchRange.lowerBound)-\(searchRange.upperBound) "
-            + "decimals=\(decimals) loop=\(loops) matches=\(matchesRequired.map(String.init) ?? "all") confidence=\(confidence)"
+            + "decimals=\(decimals) loop=\(loops) matches=\(matchesRequired.map(String.init) ?? "all") confidence=\(confidence) prior=\(prior)"
     }
 }
 
@@ -396,6 +397,7 @@ struct TempoEval {
                 case "high": settings.confidence = .high
                 default: print("--confidence takes disabled, low, moderate or high"); exit(2)
                 }
+            case "--prior": settings.prior = Float(next()) ?? settings.prior
             case "--out":
                 outURL = URL(fileURLWithPath: next())
             default:
@@ -404,7 +406,7 @@ struct TempoEval {
         }
 
         guard !labelFiles.isEmpty else {
-            print("usage: spfk-tempo-eval <labels.tsv>... [--quality balanced] [--min 40 --max 300] [--decimals 0] [--search-min 40 --search-max 300] [--no-loop] [--matches 3|all] [--confidence moderate] [--out results.tsv] [--self-test]")
+            print("usage: spfk-tempo-eval <labels.tsv>... [--quality balanced] [--min 40 --max 300] [--decimals 0] [--search-min 40 --search-max 300] [--no-loop] [--matches 3|all] [--confidence moderate] [--prior 0] [--out results.tsv] [--self-test]")
             exit(2)
         }
 
