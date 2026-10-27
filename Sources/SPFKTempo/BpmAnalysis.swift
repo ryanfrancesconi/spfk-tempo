@@ -158,18 +158,6 @@ public actor BpmAnalysis: Sendable {
         return raw
     }
 
-    /// Doubles `raw` when it rounds to exactly X.5 at one decimal place — the
-    /// specific signature of a half-tempo sub-harmonic detection (e.g. 62.48 → 124.96).
-    /// Does not apply rounding; the caller applies decimal-place rounding after this.
-    private func applyHalfTempoCorrection(_ raw: Double) -> Double {
-        let tenths = Int((raw * 10).rounded(.toNearestOrAwayFromZero))
-        guard tenths % 10 == 5 else { return raw }
-        let doubled = raw * 2
-        let cap = preferredRange.map { Double($0.upperBound) } ?? 300
-        guard doubled <= cap else { return raw }
-        return doubled
-    }
-
     /// Whether a looped file has been shown to repeat inside its own length. Nil until enough
     /// audio has been processed to tell; true for a file that is not looped.
     private func loopedFileRepeats() -> Bool? {
@@ -189,8 +177,7 @@ public actor BpmAnalysis: Sendable {
     private func vote() -> Bpm? {
         let raw = bpmDetection.estimateTempo()
         let adjusted = preferFasterMultipleIfCandidateExists(raw)
-        let corrected = applyHalfTempoCorrection(adjusted)
-        return octaveCorrected(Bpm(corrected))?.rounded(to: outputDecimalPlaces)
+        return octaveCorrected(Bpm(adjusted))?.rounded(to: outputDecimalPlaces)
     }
 
     private func analyze(_ event: AudioFileScannerEvent) async {
