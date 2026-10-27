@@ -30,6 +30,16 @@ extension BpmDetection {
             static let rms: Float = 0.1
         }
 
+        /// The log-Gaussian tempo prior that decides between a family's octaves. Measured over
+        /// centers 115–140 and widths 0.4–1.4: the vendor loops peak at 120 and 0.5, where
+        /// GiantSteps would take 130; wider than 0.7 loses on every set.
+        enum Prior {
+            /// The tempo weighted 1, in BPM.
+            static let center: Float = 120
+            /// The standard deviation, in octaves.
+            static let width: Float = 0.5
+        }
+
         /// Weights and penalties for the harmonic template scorer that reduces
         /// octave errors (e.g. picking 120 instead of 60 BPM).
         enum HarmonicTemplate {

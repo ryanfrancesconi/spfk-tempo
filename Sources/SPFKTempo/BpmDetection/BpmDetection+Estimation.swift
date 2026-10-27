@@ -170,7 +170,47 @@ extension BpmDetection {
             }
         }
 
-        return _tempoCandidates.first ?? 0
+        guard let best = _tempoCandidates.first else { return 0 }
+        return chooseOctave(of: best, hopsPerSec: hopsPerSec, acfLength: acfLength)
+    }
+
+    /// The octave of `bpm`'s family with the most evidence: the autocorrelation at each member's
+    /// own lag, weighted by the tempo prior, over the members inside the search range.
+    ///
+    /// The scorer finds the family reliably but not the level within it: in 4/4 the half-beat,
+    /// beat and two-beat periods all repeat, and the comb equalizes them.
+    private func chooseOctave(of bpm: Double, hopsPerSec: Float, acfLength: Int) -> Double {
+        var bestBpm = bpm
+        var bestScore = -Float.infinity
+
+        for factor in [0.25, 0.5, 1.0, 2.0, 4.0] {
+            let candidate = bpm * factor
+            guard options.bpmRange.contains(Float(candidate)) else { continue }
+
+            let lag = Int(((60.0 * hopsPerSec) / Float(candidate)).rounded())
+            let low = max(1, lag - 2)
+            let high = min(acfLength - 1, lag + 2)
+            guard low <= high else { continue }
+
+            var evidence: Float = 0
+            for i in low ... high where autocorrelationBuffer[i] > evidence {
+                evidence = autocorrelationBuffer[i]
+            }
+
+            let score = evidence * Self.tempoPrior(Float(candidate))
+            if score > bestScore {
+                bestScore = score
+                bestBpm = candidate
+            }
+        }
+
+        return bestBpm
+    }
+
+    /// Log-Gaussian weight of a tempo around the prior's center, 1 at the center.
+    static func tempoPrior(_ bpm: Float) -> Float {
+        let octaves = log2(bpm / Tuning.Prior.center) / Tuning.Prior.width
+        return exp(-0.5 * octaves * octaves)
     }
 
     /// The strongest periodicity in the first `seconds` of audio, 0–1, over lags from the fastest
