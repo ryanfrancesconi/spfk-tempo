@@ -9,8 +9,9 @@ import SPFKBase
 ///
 /// `BpmAnalysis` streams audio through an ``AudioFileScanner``, feeding chunks
 /// to a ``BpmDetection`` engine that performs multi-band onset detection and
-/// autocorrelation-based tempo estimation. Periodic estimates are tallied by
-/// octave family, and processing stops early once enough agree on one.
+/// autocorrelation-based tempo estimation. Each periodic estimate covers all
+/// audio so far; processing stops early once enough agree on an octave family,
+/// and the latest estimate is the result.
 ///
 /// Short files are automatically looped in-memory when shorter than half the
 /// `minimumDuration`, ensuring enough material for reliable tempo detection.
@@ -91,8 +92,8 @@ public actor BpmAnalysis: Sendable {
     /// tempo. If `matchesRequired` was set, processing stops early once that many
     /// estimates agree on an octave family; estimates finding no tempo never end it.
     ///
-    /// - Returns: The detected tempo as a ``Bpm`` value, or `nil` if no estimate
-    ///   found rhythmic content.
+    /// - Returns: The detected tempo as a ``Bpm`` value, or `nil` if the latest
+    ///   estimate found no rhythmic content.
     /// - Throws: If the analysis produced no results at all.
     public func process() async throws -> Bpm? {
         processTask = Task<Void, Error> {
@@ -186,6 +187,9 @@ public actor BpmAnalysis: Sendable {
 
     /// One vote from everything processed so far; nil when no tempo is present.
     private func vote() -> Bpm? {
+        if ProcessInfo.processInfo.environment["SPFK_TEMPO_TRACE"] != nil {
+            FileHandle.standardError.write(Data("TRACE file \(audioFile.url.lastPathComponent)\n".utf8))
+        }
         let raw = bpmDetection.estimateTempo()
         let adjusted = preferFasterMultipleIfCandidateExists(raw)
         let corrected = applyHalfTempoCorrection(adjusted)

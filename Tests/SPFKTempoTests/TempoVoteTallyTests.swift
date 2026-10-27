@@ -8,8 +8,7 @@ import Testing
 struct TempoVoteTallyTests {
     private func bpm(_ value: Double) -> Bpm? { Bpm(value) }
 
-    /// Appends and returns whether the match count was reached, outside the macro so the
-    /// mutation is not captured as a value.
+    /// Appends outside the expectation macro, which would capture the tally as a value.
     private func cast(_ vote: Bpm?, on tally: inout TempoVoteTally) -> Bool {
         tally.append(vote)
     }
@@ -27,27 +26,21 @@ struct TempoVoteTallyTests {
         #expect(tally.decision == bpm(120))
     }
 
-    @Test("Octaves share a family and the family's most common octave is returned")
-    func octaveByCountWithinFamily() {
+    @Test("Octaves count toward one family's match count")
+    func octavesShareAFamily() {
         var tally = TempoVoteTally(matchesRequired: 3, tolerance: 1)
         #expect(!cast(bpm(120), on: &tally))
-        #expect(!cast(bpm(120), on: &tally))
+        #expect(!cast(bpm(240), on: &tally))
         #expect(cast(bpm(60), on: &tally))
-        #expect(tally.decision == bpm(120))
     }
 
-    @Test("The family with more votes wins")
-    func familyByCount() {
+    @Test("The latest vote decides, including a late no-tempo vote")
+    func latestVoteDecides() {
         var tally = TempoVoteTally(matchesRequired: nil, tolerance: 1)
-        for value in [100.0, 140, 140, 100, 100] { _ = tally.append(bpm(value)) }
-        #expect(tally.decision == bpm(100))
-    }
-
-    @Test("A tie within the family goes to the latest vote")
-    func tieGoesToLatest() {
-        var tally = TempoVoteTally(matchesRequired: nil, tolerance: 1)
-        for value in [120.0, 240, 60] { _ = tally.append(bpm(value)) }
-        #expect(tally.decision == bpm(60))
+        for value in [100.0, 140, 140] { _ = tally.append(bpm(value)) }
+        #expect(tally.decision == bpm(140))
+        _ = tally.append(nil)
+        #expect(tally.decision == nil)
     }
 
     @Test("Tolerance groups neighboring values into one family")

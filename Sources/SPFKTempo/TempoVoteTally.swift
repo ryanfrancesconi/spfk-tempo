@@ -3,11 +3,12 @@
 import Foundation
 import SPFKAudioBase
 
-/// Collects the periodic tempo estimates of one file and decides between them.
+/// Collects the periodic tempo estimates of one file and says when enough agree.
 ///
-/// Votes group into families by octave (``Bpm/isMultiple(of:tolerance:)-1o201``); the family
-/// with the most votes wins, and within it the most common value, the latest on a tie. A `nil`
-/// vote says no tempo was present so far and never counts toward early termination.
+/// Each estimate covers everything processed so far, so the latest is the best informed and is
+/// the decision; the earlier ones only serve the stopping rule. Votes group into octave families
+/// (``Bpm/isMultiple(of:tolerance:)-1o201``), and the scan may end once a family holds
+/// `matchesRequired` votes. A `nil` vote says no tempo was present so far and never ends the scan.
 struct TempoVoteTally {
     private let matchesRequired: Int?
     private let tolerance: Double
@@ -39,22 +40,9 @@ struct TempoVoteTally {
         return false
     }
 
-    /// The winning family's most common value; nil when no vote found a tempo.
+    /// The latest vote; nil when it found no tempo, or when there are none.
     var decision: Bpm? {
-        guard let family = families.max(by: { $0.count < $1.count })?.representative else { return nil }
-
-        var counts: [(value: Bpm, count: Int, latest: Int)] = []
-        for (index, vote) in votes.enumerated() {
-            guard let vote, sameFamily(vote, family) else { continue }
-            if let at = counts.firstIndex(where: { $0.value == vote }) {
-                counts[at].count += 1
-                counts[at].latest = index
-            } else {
-                counts.append((vote, 1, index))
-            }
-        }
-
-        return counts.max { a, b in a.count < b.count || (a.count == b.count && a.latest < b.latest) }?.value
+        votes.last ?? nil
     }
 
     private func sameFamily(_ a: Bpm, _ b: Bpm) -> Bool {
