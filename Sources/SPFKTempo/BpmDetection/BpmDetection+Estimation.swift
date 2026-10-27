@@ -163,7 +163,7 @@ extension BpmDetection {
                 minLag: minLag,
                 maxLag: maxLag
             )
-            let bpm = AutocorrelationFFT.lagToBpm(refinedLag, hopsPerSec: hopsPerSec)
+            let bpm = AutocorrelationFFT.lagToBpm(longLagPeriod(refinedLag, acfLength: acfLength), hopsPerSec: hopsPerSec)
             // Scale dedup quantization relative to BPM: ~1 BPM resolution at all tempos.
             let quantised = Int(Double(bpm).rounded())
             if seen.insert(quantised).inserted {
@@ -206,6 +206,37 @@ extension BpmDetection {
         }
 
         return bestBpm
+    }
+
+    /// The beat period measured from its autocorrelation peaks at 1, 2, 4… beats, each implied
+    /// period weighted by its multiple and peak height: a peak `k` beats out is `k` times as precise.
+    private func longLagPeriod(_ lag: Float, acfLength: Int) -> Float {
+        var weightedPeriod: Float = 0
+        var weightSum: Float = 0
+        var multiple = 1
+
+        while true {
+            let center = Int((lag * Float(multiple)).rounded())
+            let radius = max(2, multiple / 2)
+            guard center - radius >= 1, center + radius + 1 < acfLength else { break }
+
+            var peakIndex = center - radius
+            for i in (center - radius) ... (center + radius) where autocorrelationBuffer[i] > autocorrelationBuffer[peakIndex] {
+                peakIndex = i
+            }
+            let left = autocorrelationBuffer[peakIndex - 1]
+            let middle = autocorrelationBuffer[peakIndex]
+            let right = autocorrelationBuffer[peakIndex + 1]
+            guard middle > 0, middle > left, middle > right else { break }
+
+            let position = Float(peakIndex) + ((left - right) / (left - 2 * middle + right)) / 2
+            let weight = Float(multiple) * middle
+            weightedPeriod += position / Float(multiple) * weight
+            weightSum += weight
+            multiple *= 2
+        }
+
+        return weightSum > 0 ? weightedPeriod / weightSum : lag
     }
 
     /// Log-Gaussian weight of a tempo around the prior's center, 1 at the center.

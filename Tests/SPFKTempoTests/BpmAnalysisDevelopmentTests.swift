@@ -75,6 +75,17 @@ import Testing
             #expect(bpm?.rawValue == 120)
         }
 
+        /// A 70 BPM track whose one-beat autocorrelation peak sits low (139.5 at Accurate) while its
+        /// peaks at 4–16 beats agree on 140; either octave is accepted.
+        @Test(arguments: [AnalysisQuality.balanced, .accurate])
+        func shinobi_70(quality: AnalysisQuality) async throws {
+            let url = try resource("Shinobi Shortn 70 BPM.m4a")
+            let options = BpmAnalysisOptions(detection: .init(quality: quality), preferredRange: 40 ... 300)
+
+            let bpm = try await BpmAnalysis(url: url, options: options).process()
+            #expect(bpm?.rawValue == 70 || bpm?.rawValue == 140)
+        }
+
         @Test func longSong() async throws {
             let url = try resource("07 Drukqs - Disk 01 - bbydhyonchord.mp3")
 
