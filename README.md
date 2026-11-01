@@ -3,130 +3,59 @@
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fryanfrancesconi%2Fspfk-tempo%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/ryanfrancesconi/spfk-tempo)
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fryanfrancesconi%2Fspfk-tempo%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/ryanfrancesconi/spfk-tempo)
 
-A Swift package for detecting the tempo (BPM) of audio files using multi-band spectral flux analysis, FFT-based autocorrelation, and harmonic template matching. Built on the Accelerate framework with AVFoundation for audio decoding.
+Two ways of working with an audio file's time: detecting its tempo, and changing its rate and pitch
+independently of each other.
 
-Supports any audio format readable by Core Audio and provides both a high-level async API with progress reporting and a low-level streaming API for real-time ingestion.
+## Tempo detection
 
-## Detecting tempo
+Detection looks for a steady pulse rather than for individual beats. It measures how the spectrum
+changes over time in several frequency bands, finds the periods at which those changes repeat, and
+scores candidate tempos against the beat and bar structure that period implies. Tempo is
+ambiguous by an octave by nature — a track at 140 BPM is also a track at 70 — so the result is
+chosen within a family of related tempos rather than taken as the strongest single peak.
 
-`BpmAnalysis` is an actor that reads a file and returns a `Bpm`. It reports progress and honors cancellation, and
-takes a `BpmAnalysisOptions` carrying both file-level parameters and the detection options nested
-inside it.
+Material with no steady pulse comes back as `nil` rather than as a confident guess. A drone, a
+dialogue line or a sound effect has no tempo, and a tagging app is better served by an empty field
+than by a wrong one.
 
-Files shorter than 7.5 seconds — half the default `minimumDuration` of 15 — are automatically looped
-in memory to provide enough material for stable detection.
-
-Processing stops as soon as 3 consistent periodic estimates agree within ±1 BPM. `matchesRequired`
-and `tolerance` tighten or loosen that consensus.
-
-`BpmDetection` is the low-level entry point, accepting raw samples directly for a real-time or
-custom decoding pipeline.
-
-## Time and pitch: `SPFKTimePitchKernel`
-
-A C API over [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) (MIT, vendored under `Sources/SPFKTimePitchKernel/vendor/` with its licenses and revisions), for changing rate and pitch independently. It is C so that clients need no Swift/C++ interop.
-
-- **Live** (`TimePitchKernelInputFramesNeeded` then `TimePitchKernelProcess`, block by block): every allocation happens in `TimePitchKernelCreate`, and the setters are safe to call from any thread while the render thread runs. A rate change ramps over 20 ms.
-- **Offline** (`TimePitchKernelRenderExact`): renders exactly `round(inputFrames / rate)` frames, reading real context beyond each edge of the material where the file has it, and refuses any other output count. Renders are deterministic.
-
-`TimePitchRenderer` is the Swift entry point to the offline path: it renders a `TimePitchDescription` (from spfk-audio-base) over a frame range of an `AVAudioPCMBuffer`, treating the rest of the buffer as context, and throws rather than return a wrong length or a silent result. `contextFrames(for:sampleRate:channelCount:quality:)` says how much context to read.
-
-`spfk-time-pitch-bench <stereo.wav> [out dir]` measures exactness, alignment, identity, latency, CPU, allocations, determinism, stereo coherence and the timbre options. Build it with `swift build -c release`.
-
-## Analysis Quality
-
-| Quality | Overlap | Relative Speed | Best For |
-|---------|---------|---------------|----------|
-| `.fast` | None (1x) | ~4x faster | Strong rhythmic material, long files |
-| `.balanced` | 50% (2x) | ~2x faster | General-purpose default |
-| `.accurate` | 75% (4x) | Baseline | Complex material, short files |
-
-## Configuration
-
-`BpmDetectionOptions` controls the algorithm behavior:
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `quality` | `.balanced` | Window overlap level (see table above) |
-| `bpmRange` | `40...300` | Valid tempo range — candidates outside are discarded |
-| `beatsPerBar` | `4` | Beats per bar for comb-filter spacing (3 for waltz, etc.) |
-| `perceptualWeightingAmount` | `0.0` | Mid-tempo bias strength (0.0 = neutral, 1.0 = full bias toward ~130 BPM) |
-| `confidenceLevel` | `.moderate` | How aggressively to reject non-rhythmic audio (`.disabled`, `.low`, `.moderate`, `.high`) |
-
-`BpmAnalysisOptions` wraps file-level parameters and a nested `detection` property:
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `bufferDuration` | `1.0` | Duration in seconds of each analysis chunk |
-| `minimumDuration` | `15` | Files shorter than half this are looped in-memory; `nil` to disable |
-| `matchesRequired` | `3` | Number of consistent periodic estimates for early exit; `nil` processes entire file |
-| `tolerance` | `1` | BPM tolerance for consensus matching (±1 BPM accommodates lag quantization jitter) |
-| `detection` | `.init()` | Nested `BpmDetectionOptions` (see table above) |
-
-## Architecture
-
-```
-BpmAnalysis (actor)
-  |-- Wraps AVAudioFile + BpmDetection for file-level processing
-  |-- AudioFileScanner feeds audio buffers in chunks
-  |-- Periodic estimation with CountableResult consensus voting
-  |-- Early cancellation when matchesRequired is satisfied
-  |
-  v
-BpmDetection (class)
-  |-- Streaming sample ingestion via process()
-  |-- Overlapping analysis frames (blockSize / quality)
-  |
-  |-- FourierFilterbank (x3: low, mid, high bands)
-  |     |-- Pre-computed windowed DFT basis (sin/cos tables)
-  |     |-- vDSP matrix-vector multiply for per-band magnitude spectra
-  |
-  |-- Spectral Flux
-  |     |-- Log-compressed positive flux per band
-  |     |-- RMS energy envelope as broadband signal
-  |     |-- Moving-average normalization to reduce loudness bias
-  |
-  |-- AutocorrelationFFT
-  |     |-- FFT -> |X|^2 -> IFFT autocorrelation
-  |     |-- Unity-normalized per-band, weighted sum across bands
-  |
-  |-- ACFCombFilter
-  |     |-- Comb filtering at beat/bar multiples
-  |     |-- Harmonic template scoring with octave-error penalties
-  |     |-- Optional perceptual weighting toward mid-tempo
-  |     |-- Parabolic interpolation for sub-lag peak refinement
-  |
-  v
-Bpm (value type, typically 40-300 range)
+```swift
+let bpm: Bpm? = try await BpmAnalysis(url: url).process()
 ```
 
-### Processing Pipeline
+`BpmAnalysis` reads any file Core Audio can open, reports progress, honors cancellation, and stops
+early once successive estimates agree. Very short files, such as a one-bar loop, are repeated in
+memory so there is enough material to measure.
 
-1. **Input** — Audio samples arrive via `process()` (streaming) or `estimateTempoOfSamples()` (batch)
-2. **Band decomposition** — Three `FourierFilterbank` instances extract magnitude spectra for low (0-550 Hz), mid (550-4000 Hz), and high (4-16 kHz) bands
-3. **Onset detection** — Positive spectral flux (log-compressed, half-wave rectified) per band, plus a broadband RMS envelope, normalized by a moving average window to reduce loudness bias
-4. **Periodicity analysis** — FFT-based autocorrelation, unity-normalized per band, then weighted-summed (low 1.0, mid 0.8, high 0.5, RMS 0.1)
-5. **Candidate scoring** — ACF comb filter at beat/bar multiples, blended with harmonic template matching (rewards correct harmonics, penalizes octave errors)
-6. **Peak refinement** — Parabolic interpolation for sub-lag precision, then conversion to BPM
-7. **Consensus** (BpmAnalysis only) — `CountableResult` collects periodic estimates and triggers early exit when enough agree
+`BpmDetection` is the same engine without the file: feed it samples as they arrive and ask for an
+estimate when you need one, for a live input or a decoder of your own.
 
-## Supported Formats
+## Time and pitch
 
-Any audio format readable by Core Audio's `AVAudioFile`, including WAV, AIF, FLAC, M4A, MP4, MP3, AAC, CAF, and OGG.
+`SPFKTimePitchKernel` is a C interface over the vendored
+[Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) (MIT), so a caller
+needs no Swift/C++ interop. It runs in two modes:
 
-## Dependencies
+- **Live**, block by block, where every allocation happens up front and the rate and pitch can be
+  changed from any thread while the render thread runs.
+- **Offline**, where a render produces exactly the length the rate implies, reading real audio past
+  each edge of the selection where the file has it, and fails rather than return a different length.
 
-| Package | Purpose |
-|---------|---------|
-| [spfk-audio-base](https://github.com/ryanfrancesconi/spfk-audio-base) | `Bpm`, `AudioFileScanner`, `CountableResult`, `URLProgressEvent`, `TimePitchDescription` |
-| [spfk-testing](https://github.com/ryanfrancesconi/spfk-testing) | Test audio resources (test target only) |
+`TimePitchRenderer` is the Swift entry point to the offline mode. It throws rather than hand back
+silence from an input that was not silent, so a failed render is never mistaken for a quiet one.
 
-`SPFKTimePitchKernel` depends on nothing but Accelerate.
+```swift
+let shifted = try await TimePitchRenderer.render(
+    buffer,
+    description: TimePitchDescription(semitones: 7),
+    quality: .best
+)
+```
 
-## Requirements
+## Scope
 
-- **Platforms:** macOS 13+, iOS 16+
-- **Swift:** 6.2+
+The shared audio types (`Bpm`, `TimePitchDescription`) come from spfk-audio-base.
+Musical key detection is in spfk-musical-analysis. Everything here is analysis or rendering only,
+with no UI.
 
 ## About
 
