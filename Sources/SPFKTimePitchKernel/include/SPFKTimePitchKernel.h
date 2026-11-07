@@ -1,7 +1,6 @@
 // Copyright Ryan Francesconi. All Rights Reserved. Revision History at https://github.com/ryanfrancesconi/spfk-tempo
 
-#ifndef SPFKTimePitchKernel_h
-#define SPFKTimePitchKernel_h
+#pragma once
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -86,5 +85,3 @@ bool TimePitchKernelRenderExact(TimePitchKernelRef kernel, const float *const *i
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* SPFKTimePitchKernel_h */
