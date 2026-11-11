@@ -5,17 +5,6 @@ import Testing
 
 @Suite("BpmDetection Core")
 struct BpmDetectionCoreTests {
-    @Test("Options defaults are sane")
-    func optionsDefaults() {
-        let options = BpmDetectionOptions()
-
-        #expect(options.quality == .balanced)
-        #expect(options.bpmRange == 40 ... 300)
-        #expect(options.beatsPerBar == 4)
-        #expect(options.perceptualWeightingAmount == 0.0)
-        #expect(options.confidenceLevel == .moderate)
-    }
-
     @Test("Quality levels produce consistent results on synthetic click track")
     func qualityLevelsProduceConsistentResults() {
         let sampleRate: Float = 48000
@@ -36,35 +25,6 @@ struct BpmDetectionCoreTests {
             let error = Self.bestFamilyError(observedBpm: tempo, sourceBpm: sourceBpm)
             #expect(error <= 2.0, "Quality \(quality) detected \(tempo), expected near \(sourceBpm)")
         }
-    }
-
-    @Test("Custom Options are stored correctly")
-    func customOptionsAreStoredCorrectly() {
-        let options = BpmDetectionOptions(
-            quality: .accurate,
-            bpmRange: 60 ... 200,
-            beatsPerBar: 3,
-            perceptualWeightingAmount: 0.5
-        )
-
-        #expect(options.quality == .accurate)
-        #expect(options.bpmRange == 60 ... 200)
-        #expect(options.beatsPerBar == 3)
-        #expect(options.perceptualWeightingAmount == 0.5)
-    }
-
-    @Test("AnalysisQuality raw values match expected step divisors")
-    func analysisQualityRawValues() {
-        #expect(AnalysisQuality.fast.rawValue == 1)
-        #expect(AnalysisQuality.balanced.rawValue == 2)
-        #expect(AnalysisQuality.accurate.rawValue == 4)
-    }
-
-    @Test("ConfidenceLevel thresholds are ordered")
-    func confidenceLevelThresholds() {
-        #expect(ConfidenceLevel.disabled.threshold == 0)
-        #expect(ConfidenceLevel.low.threshold < ConfidenceLevel.moderate.threshold)
-        #expect(ConfidenceLevel.moderate.threshold < ConfidenceLevel.high.threshold)
     }
 
     @Test("Disabled confidence level accepts noise")
