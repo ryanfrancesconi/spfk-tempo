@@ -151,7 +151,7 @@ void measureIdentity(const Audio &fixture) {
     Audio windowSource = Audio::silence(fixture.channelCount(), length, sr);
     for (int c = 0; c < fixture.channelCount(); ++c)
         std::copy_n(fixture.channels[c].begin() + start, length, windowSource.channels[c].begin());
-    std::printf("  exact, 1–3 s window w/ context: %.1f dB\n", nullDB(window, windowSource, 0, length));
+    std::printf("  exact, 1-3 s window w/ context: %.1f dB\n", nullDB(window, windowSource, 0, length));
 
     for (bool split : {false, true}) {
         Kernel live(fixture.channelCount(), sr, 512, TimePitchKernelQualityBest, split);

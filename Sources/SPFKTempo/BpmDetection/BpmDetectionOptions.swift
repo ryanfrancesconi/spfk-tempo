@@ -25,9 +25,9 @@ public struct BpmDetectionOptions: Sendable {
     ///
     /// - Parameters:
     ///   - quality: Analysis quality level. Defaults to `.balanced`.
-    ///   - bpmRange: Valid BPM range. Defaults to 40–300.
+    ///   - bpmRange: Valid BPM range. Defaults to 40-300.
     ///   - beatsPerBar: Beats per bar for comb filtering. Defaults to 4.
-    ///   - perceptualWeightingAmount: Mid-tempo bias strength (0.0–1.0). Defaults to 0.0.
+    ///   - perceptualWeightingAmount: Mid-tempo bias strength (0.0-1.0). Defaults to 0.0.
     ///   - confidenceLevel: How aggressively to reject non-rhythmic audio. Defaults to `.moderate`.
     public init(
         quality: AnalysisQuality = .balanced,

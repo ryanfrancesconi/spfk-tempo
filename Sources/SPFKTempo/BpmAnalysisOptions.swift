@@ -49,10 +49,10 @@ public struct BpmAnalysisOptions: Sendable {
     /// Pass `nil` to disable octave correction.
     public var preferredRange: ClosedRange<Float>?
 
-    /// Number of decimal places to retain in the output BPM value (0–3).
+    /// Number of decimal places to retain in the output BPM value (0-3).
     ///
     /// `0` returns integer BPM (e.g. 120), `1` retains one decimal place (e.g. 120.5),
-    /// and so on. Values outside 0–3 are clamped.
+    /// and so on. Values outside 0-3 are clamped.
     public var outputDecimalPlaces: Int
 
     public init(

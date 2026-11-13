@@ -76,7 +76,7 @@ import Testing
         }
 
         /// A 70 BPM track whose one-beat autocorrelation peak sits low (139.5 at Accurate) while its
-        /// peaks at 4–16 beats agree on 140; either octave is accepted.
+        /// peaks at 4-16 beats agree on 140; either octave is accepted.
         @Test(arguments: [AnalysisQuality.balanced, .accurate])
         func shinobi_70(quality: AnalysisQuality) async throws {
             let url = try resource("Shinobi Shortn 70 BPM.m4a")

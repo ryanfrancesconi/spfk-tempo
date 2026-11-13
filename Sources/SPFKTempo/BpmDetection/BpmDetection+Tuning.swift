@@ -20,18 +20,18 @@ extension BpmDetection {
         /// Per-band autocorrelation weights controlling how much each frequency
         /// range contributes to the combined periodicity signal.
         enum BandWeights {
-            /// Low band (0–550 Hz): kick drums and bass onsets.
+            /// Low band (0-550 Hz): kick drums and bass onsets.
             static let low: Float = 1.0
-            /// Mid band (550–4000 Hz): snare, vocals, harmonic content.
+            /// Mid band (550-4000 Hz): snare, vocals, harmonic content.
             static let mid: Float = 0.8
-            /// High band (4–16 kHz): hi-hats and cymbal transients.
+            /// High band (4-16 kHz): hi-hats and cymbal transients.
             static let high: Float = 0.5
             /// Broadband RMS energy envelope.
             static let rms: Float = 0.1
         }
 
         /// The log-Gaussian tempo prior that decides between a family's octaves. Measured over
-        /// centers 115–140 and widths 0.4–1.4: the vendor loops peak at 120 and 0.5, where
+        /// centers 115-140 and widths 0.4-1.4: the vendor loops peak at 120 and 0.5, where
         /// GiantSteps would take 130; wider than 0.7 loses on every set.
         enum Prior {
             /// The tempo weighted 1, in BPM.

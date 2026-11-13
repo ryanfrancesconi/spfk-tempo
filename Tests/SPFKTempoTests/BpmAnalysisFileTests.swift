@@ -33,7 +33,7 @@ class BpmAnalysisFileTests: TestCaseModel {
         #expect(bpm?.isMultiple(of: 109, tolerance: bpmTolerance) == true)
     }
 
-    /// Pink noise has no rhythmic content — the analyzer should return nil.
+    /// Pink noise has no rhythmic content - the analyzer should return nil.
     @Test func noTempo() async throws {
         let url = TestBundleResources.shared.pink_noise
         let bpm = try await BpmAnalysis(url: url).process()

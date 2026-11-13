@@ -10,7 +10,7 @@ import Testing
 @Suite(.tags(.file))
 struct BpmAnalysisCancellationTests {
     /// A user cancel and a genuine "no tempo found" both reach the same `guard` in `process()`,
-    /// and `PlaylistProcessor` branches on the error type — reporting a cancel as an `NSError`
+    /// and `PlaylistProcessor` branches on the error type - reporting a cancel as an `NSError`
     /// surfaces it to the user as a failed file. Early termination cancels `processTask`
     /// internally without cancelling the enclosing task, so only the latter means a user cancel;
     /// the detection tests alongside this one cover that direction.

@@ -245,7 +245,7 @@ extension BpmDetection {
         return exp(-0.5 * octaves * octaves)
     }
 
-    /// The strongest periodicity in the first `seconds` of audio, 0–1, over lags from the fastest
+    /// The strongest periodicity in the first `seconds` of audio, 0-1, over lags from the fastest
     /// tempo in range to half that span. Nil until that much audio has been processed.
     ///
     /// A file the scanner loops gains a period equal to its own length, so a one-shot reads as a

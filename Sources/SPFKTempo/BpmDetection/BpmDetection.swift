@@ -29,15 +29,15 @@ public final class BpmDetection {
     /// Smaller values increase overlap and accuracy at the cost of speed.
     let stepSize: Int
 
-    /// Filterbank extracting spectral energy in the low frequency band (0–550 Hz).
+    /// Filterbank extracting spectral energy in the low frequency band (0-550 Hz).
     /// Captures kick drum and bass content.
     let lowFrequencyFilterbank: FourierFilterbank
 
-    /// Filterbank extracting spectral energy in the mid frequency band (550–4000 Hz).
+    /// Filterbank extracting spectral energy in the mid frequency band (550-4000 Hz).
     /// Captures snare, vocals, and harmonic content.
     let midFrequencyFilterbank: FourierFilterbank
 
-    /// Filterbank extracting spectral energy in the high frequency band (4–16 kHz).
+    /// Filterbank extracting spectral energy in the high frequency band (4-16 kHz).
     /// Captures hi-hats, cymbals, and transient content.
     let highFrequencyFilterbank: FourierFilterbank
 
@@ -141,7 +141,7 @@ public final class BpmDetection {
 
     /// Processes a buffer of audio samples and returns the estimated tempo.
     ///
-    /// This is a batch convenience method — it processes all samples at once and
+    /// This is a batch convenience method - it processes all samples at once and
     /// returns the result. For streaming usage, call ``process(_:count:)`` followed
     /// by ``estimateTempo()`` separately.
     ///
